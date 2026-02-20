@@ -1,0 +1,12 @@
+/* Global styles are now in App.vue */
+/* PrimeVue theme is loaded via main.js */
+
+/* Additional global resets */
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  min-height: 100vh;
+}
