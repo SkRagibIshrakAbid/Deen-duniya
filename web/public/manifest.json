@@ -1,0 +1,61 @@
+{
+  "name": "Deen Duniya - Islamic Prayer Times",
+  "short_name": "Deen Duniya",
+  "description": "Beautiful Islamic prayer times and calendar application with accurate prayer times, Ramadan features, and smart notifications",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#2c5f2d",
+  "theme_color": "#2c5f2d",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/moon-favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["lifestyle", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Prayer Times",
+      "short_name": "Prayer",
+      "description": "View today's prayer times",
+      "url": "/#prayer-times",
+      "icons": [
+        {
+          "src": "/moon-favicon.svg",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "short_name": "Settings",
+      "description": "Adjust prayer time settings",
+      "url": "/#settings",
+      "icons": [
+        {
+          "src": "/moon-favicon.svg",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "screenshots": [],
+  "related_applications": [],
+  "prefer_related_applications": false
+}

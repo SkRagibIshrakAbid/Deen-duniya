@@ -1,6 +1,7 @@
 /**
  * Notification Service
  * Manages browser notifications for prayer times and Ramadan events
+ * Uses Service Worker for persistent notifications
  */
 
 import dayjs from 'dayjs'
@@ -10,8 +11,46 @@ dayjs.extend(duration)
 
 class NotificationService {
   constructor() {
-    this.scheduledNotifications = new Map()
-    this.checkInterval = null
+    this.registration = null
+  }
+
+  /**
+   * Set Service Worker registration
+   */
+  setServiceWorkerRegistration(registration) {
+    this.registration = registration
+  }
+
+  /**
+   * Check if Service Worker is available and ready
+   */
+  isServiceWorkerReady() {
+    return !!(this.registration && this.registration.active)
+  }
+
+  /**
+   * Send message to Service Worker
+   */
+  async sendMessageToServiceWorker(message) {
+    if (!this.isServiceWorkerReady()) {
+      console.warn('Service Worker not ready, waiting for registration...')
+      // Wait for Service Worker to be ready
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready
+        this.setServiceWorkerRegistration(registration)
+      } else {
+        console.error('Service Worker not supported')
+        return false
+      }
+    }
+
+    if (navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage(message)
+      return true
+    } else {
+      console.error('No active Service Worker controller')
+      return false
+    }
   }
 
   /**
@@ -61,175 +100,45 @@ class NotificationService {
   }
 
   /**
-   * Schedule notifications for prayer times
+   * Schedule notifications for prayer times using Service Worker
    */
-  schedulePrayerNotifications(prayerTimings, settings, isRamadan = false) {
-    // Clear existing scheduled notifications
-    this.clearScheduledNotifications()
-
+  async schedulePrayerNotifications(prayerTimings, settings, isRamadan = false) {
     if (!settings.notificationsEnabled || Notification.permission !== 'granted') {
+      // Clear notifications if disabled
+      await this.clearScheduledNotifications()
       return
     }
 
-    const now = dayjs()
-    const prayers = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
-
-    prayers.forEach(prayerName => {
-      if (!prayerTimings[prayerName]) return
-
-      const prayerEnabled = settings[`notify${prayerName}`]
-      if (!prayerEnabled) return
-
-      // Parse prayer time
-      const [hours, minutes] = prayerTimings[prayerName].split(':')
-      const prayerTime = now.clone().hour(parseInt(hours)).minute(parseInt(minutes)).second(0)
-
-      // If prayer time has passed today, skip
-      if (prayerTime.isBefore(now)) return
-
-      // Schedule "before prayer" notification
-      if (settings.notifyBeforePrayer) {
-        const beforeTime = prayerTime.subtract(settings.notifyBeforeMinutes, 'minutes')
-        if (beforeTime.isAfter(now)) {
-          const timeoutId = setTimeout(() => {
-            this.show(`${prayerName} prayer in ${settings.notifyBeforeMinutes} minutes`, {
-              body: `Time to prepare for ${prayerName} prayer`,
-              tag: `${prayerName}-before`,
-              icon: '/prayer-icon.png'
-            })
-          }, beforeTime.diff(now))
-
-          this.scheduledNotifications.set(`${prayerName}-before`, timeoutId)
-        }
-      }
-
-      // Schedule "at prayer time" notification
-      if (settings.notifyAtPrayer) {
-        const timeoutId = setTimeout(() => {
-          const body = isRamadan && prayerName === 'Maghrib' 
-            ? 'It\'s time for Maghrib prayer and Iftar!' 
-            : `It's time for ${prayerName} prayer`
-          
-          this.show(`${prayerName} - ${prayerTimings[prayerName]}`, {
-            body,
-            tag: prayerName,
-            icon: '/prayer-icon.png',
-            requireInteraction: true
-          })
-        }, prayerTime.diff(now))
-
-        this.scheduledNotifications.set(prayerName, timeoutId)
+    // Send schedule message to Service Worker
+    const success = await this.sendMessageToServiceWorker({
+      type: 'SCHEDULE_NOTIFICATIONS',
+      payload: {
+        prayerTimings,
+        settings,
+        isRamadan
       }
     })
 
-    // Schedule Ramadan-specific notifications
-    if (isRamadan && settings.notifyRamadan) {
-      // Sehri notification (at Imsak/Fajr time)
-      if (settings.notifyRamadanSehri && prayerTimings.Imsak) {
-        const [hours, minutes] = prayerTimings.Imsak.split(':')
-        const sehriTime = now.clone().hour(parseInt(hours)).minute(parseInt(minutes)).second(0)
-
-        if (sehriTime.isAfter(now)) {
-          // Notify 15 minutes before Sehri ends
-          const beforeSehri = sehriTime.subtract(15, 'minutes')
-          if (beforeSehri.isAfter(now)) {
-            const timeoutId = setTimeout(() => {
-              this.show('Sehri Time Ending Soon', {
-                body: 'Sehri (Suhoor) ends in 15 minutes',
-                tag: 'sehri-reminder',
-                icon: '/ramadan-icon.png',
-                requireInteraction: true
-              })
-            }, beforeSehri.diff(now))
-
-            this.scheduledNotifications.set('sehri-before', timeoutId)
-          }
-
-          // Notify at Sehri end time
-          const timeoutId = setTimeout(() => {
-            this.show('Sehri Time Ended', {
-              body: 'Sehri (Suhoor) time has ended. Fast begins now.',
-              tag: 'sehri-end',
-              icon: '/ramadan-icon.png',
-              requireInteraction: true
-            })
-          }, sehriTime.diff(now))
-
-          this.scheduledNotifications.set('sehri-end', timeoutId)
-        }
-      }
-
-      // Iftar notification (at Maghrib time) - already covered above but with special message
-      if (settings.notifyRamadanIftar && prayerTimings.Maghrib) {
-        const [hours, minutes] = prayerTimings.Maghrib.split(':')
-        const iftarTime = now.clone().hour(parseInt(hours)).minute(parseInt(minutes)).second(0)
-
-        if (iftarTime.isAfter(now)) {
-          // Notify 5 minutes before Iftar
-          const beforeIftar = iftarTime.subtract(5, 'minutes')
-          if (beforeIftar.isAfter(now)) {
-            const timeoutId = setTimeout(() => {
-              this.show('Iftar Time Approaching', {
-                body: 'Get ready to break your fast in 5 minutes',
-                tag: 'iftar-reminder',
-                icon: '/ramadan-icon.png',
-                requireInteraction: true
-              })
-            }, beforeIftar.diff(now))
-
-            this.scheduledNotifications.set('iftar-before', timeoutId)
-          }
-        }
-      }
+    if (!success) {
+      console.error('Failed to schedule notifications via Service Worker')
     }
   }
 
   /**
-   * Clear all scheduled notifications
+   * Clear all scheduled notifications via Service Worker
    */
-  clearScheduledNotifications() {
-    this.scheduledNotifications.forEach(timeoutId => clearTimeout(timeoutId))
-    this.scheduledNotifications.clear()
+  async clearScheduledNotifications() {
+    await this.sendMessageToServiceWorker({
+      type: 'CLEAR_NOTIFICATIONS'
+    })
   }
 
   /**
-   * Start checking for prayer times and scheduling notifications
+   * Show a test notification via Service Worker
    */
-  startNotificationLoop(getPrayerData, settings) {
-    // Check every minute
-    this.checkInterval = setInterval(() => {
-      const data = getPrayerData()
-      if (data.timings) {
-        this.schedulePrayerNotifications(data.timings, settings, data.isRamadan)
-      }
-    }, 60000) // Check every minute
-
-    // Schedule immediately
-    const data = getPrayerData()
-    if (data.timings) {
-      this.schedulePrayerNotifications(data.timings, settings, data.isRamadan)
-    }
-  }
-
-  /**
-   * Stop the notification loop
-   */
-  stopNotificationLoop() {
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval)
-      this.checkInterval = null
-    }
-    this.clearScheduledNotifications()
-  }
-
-  /**
-   * Show a test notification
-   */
-  showTestNotification() {
-    this.show('Prayer Time Notifications Enabled', {
-      body: 'You will receive notifications for prayer times',
-      tag: 'test',
-      icon: '/prayer-icon.png'
+  async showTestNotification() {
+    await this.sendMessageToServiceWorker({
+      type: 'SHOW_TEST_NOTIFICATION'
     })
   }
 }
