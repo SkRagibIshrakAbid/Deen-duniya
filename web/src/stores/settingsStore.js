@@ -11,7 +11,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const calculationMethod = ref(3) // Default: Muslim World League
   const asrCalculation = ref(0) // Default: Shafi (Standard)
   const hijriAdjustment = ref(0) // Hijri date adjustment (-2 to +2 days)
-  const timeFormat = ref('24') // '12' or '24'
+  const timeFormat = ref('12') // '12' or '24'
   const language = ref('en') // 'en' or 'ar'
   const theme = ref('light') // 'light', 'dark', 'auto'
   
@@ -220,7 +220,7 @@ export const useSettingsStore = defineStore('settings', () => {
         asrCalculation.value = settings.asrCalculation ?? 0
         hijriAdjustment.value = settings.hijriAdjustment ?? 0
         console.log('Loaded hijri adjustment from localStorage:', hijriAdjustment.value)
-        timeFormat.value = settings.timeFormat ?? '24'
+        timeFormat.value = settings.timeFormat ?? '12'
         language.value = settings.language ?? 'en'
         theme.value = settings.theme ?? 'light'
         notificationsEnabled.value = settings.notificationsEnabled ?? false
