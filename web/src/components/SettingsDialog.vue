@@ -438,14 +438,33 @@ watch(isVisible, (newVal) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
   padding: 0.75rem;
   background-color: var(--bg-color);
   border-radius: 0.5rem;
   margin-left: 1.5rem;
+  overflow: hidden;
+}
+
+.sub-setting label {
+  flex: 1;
+  min-width: 0;
 }
 
 .compact-input {
-  width: 150px;
+  width: 120px;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.compact-input :deep(.p-inputnumber) {
+  width: 100%;
+  max-width: 100%;
+}
+
+.compact-input :deep(.p-inputnumber-input) {
+  width: 100%;
+  max-width: 100%;
 }
 
 .prayer-toggles {
@@ -484,10 +503,17 @@ watch(isVisible, (newVal) => {
   
   .sub-setting {
     margin-left: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+  
+  .sub-setting label {
+    flex: none;
   }
   
   .compact-input {
-    width: 120px;
+    width: 100%;
   }
 }
 </style>
