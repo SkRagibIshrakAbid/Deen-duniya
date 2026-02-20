@@ -91,6 +91,12 @@
       @settings-changed="onSettingsChanged"
     />
 
+    <!-- Hijri Calibration Dialog -->
+    <HijriCalibrationDialog
+      v-model:visible="showCalibrationDialog"
+      @calibrated="onCalibrated"
+    />
+
     <!-- Toast for notifications -->
     <Toast />
   </div>
@@ -114,6 +120,7 @@ import RamadanCard from './components/RamadanCard.vue'
 import IslamicCalendar from './components/IslamicCalendar.vue'
 import LocationDialog from './components/LocationDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import HijriCalibrationDialog from './components/HijriCalibrationDialog.vue'
 
 // Stores
 const locationStore = useLocationStore()
@@ -123,6 +130,7 @@ const settingsStore = useSettingsStore()
 // State
 const showLocationDialog = ref(false)
 const showSettings = ref(false)
+const showCalibrationDialog = ref(false)
 const currentDate = ref(getCurrentDateInfo())
 
 // Computed
@@ -139,6 +147,20 @@ const toggleNotifications = async () => {
 
 const onLocationSet = async () => {
   showLocationDialog.value = false
+  await prayerTimesStore.fetchTodayPrayerTimes()
+  
+  // Check if we need to show Hijri calibration dialog (first time setup during Ramadan)
+  const hasCalibrated = localStorage.getItem('hijriCalibrated')
+  if (!hasCalibrated && prayerTimesStore.isRamadan) {
+    // Wait a moment for prayer times to load fully
+    setTimeout(() => {
+      showCalibrationDialog.value = true
+    }, 500)
+  }
+}
+
+const onCalibrated = async (adjustment) => {
+  // Refresh prayer times with new adjustment
   await prayerTimesStore.fetchTodayPrayerTimes()
 }
 
