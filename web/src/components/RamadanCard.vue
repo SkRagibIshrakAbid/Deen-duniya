@@ -3,7 +3,7 @@
     <template #title>
       <div class="card-header">
         <i class="pi pi-star-fill"></i>
-        Ramadan {{ ramadanDay }} - Blessed Month
+        Ramadan Day {{ ramadanDay || '?' }} - Blessed Month
       </div>
     </template>
     <template #content>

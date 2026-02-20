@@ -8,19 +8,26 @@ const API_BASE_URL = 'https://api.aladhan.com/v1'
 /**
  * Get prayer times for a specific date by coordinates
  */
-export const getPrayerTimes = async (date, latitude, longitude, method = 3, school = 0) => {
+export const getPrayerTimes = async (date, latitude, longitude, method = 3, school = 0, adjustment = 0) => {
   try {
     const params = new URLSearchParams({
       latitude,
       longitude,
       method,
-      school
+      school,
+      calendarMethod: 'MATHEMATICAL',
+      adjustment: adjustment
     })
     
-    const response = await fetch(`${API_BASE_URL}/timings/${date}?${params}`)
+    const url = `${API_BASE_URL}/timings/${date}?${params}`
+    console.log('Fetching prayer times with adjustment:', adjustment)
+    console.log('Full API URL:', url)
+    
+    const response = await fetch(url)
     const data = await response.json()
     
     if (data.code === 200) {
+      console.log('Hijri date from API:', data.data.date.hijri)
       return data.data
     }
     throw new Error(data.status || 'Failed to fetch prayer times')
@@ -33,13 +40,15 @@ export const getPrayerTimes = async (date, latitude, longitude, method = 3, scho
 /**
  * Get prayer times by city name
  */
-export const getPrayerTimesByCity = async (date, city, country, method = 3, school = 0) => {
+export const getPrayerTimesByCity = async (date, city, country, method = 3, school = 0, adjustment = 0) => {
   try {
     const params = new URLSearchParams({
       city,
       country,
       method,
-      school
+      school,
+      calendarMethod: 'MATHEMATICAL',
+      adjustment: adjustment
     })
     
     const response = await fetch(`${API_BASE_URL}/timingsByCity/${date}?${params}`)
@@ -58,12 +67,14 @@ export const getPrayerTimesByCity = async (date, city, country, method = 3, scho
 /**
  * Get prayer times by address
  */
-export const getPrayerTimesByAddress = async (date, address, method = 3, school = 0) => {
+export const getPrayerTimesByAddress = async (date, address, method = 3, school = 0, adjustment = 0) => {
   try {
     const params = new URLSearchParams({
       address,
       method,
-      school
+      school,
+      calendarMethod: 'MATHEMATICAL',
+      adjustment: adjustment
     })
     
     const response = await fetch(`${API_BASE_URL}/timingsByAddress/${date}?${params}`)
@@ -82,13 +93,15 @@ export const getPrayerTimesByAddress = async (date, address, method = 3, school 
 /**
  * Get monthly calendar (all prayer times for a month)
  */
-export const getMonthlyCalendar = async (year, month, latitude, longitude, method = 3, school = 0) => {
+export const getMonthlyCalendar = async (year, month, latitude, longitude, method = 3, school = 0, adjustment = 0) => {
   try {
     const params = new URLSearchParams({
       latitude,
       longitude,
       method,
-      school
+      school,
+      calendarMethod: 'MATHEMATICAL',
+      adjustment: adjustment
     })
     
     const response = await fetch(`${API_BASE_URL}/calendar/${year}/${month}?${params}`)
@@ -107,12 +120,14 @@ export const getMonthlyCalendar = async (year, month, latitude, longitude, metho
 /**
  * Get Hijri calendar for a specific month
  */
-export const getHijriCalendar = async (year, month, latitude, longitude, method = 3) => {
+export const getHijriCalendar = async (year, month, latitude, longitude, method = 3, adjustment = 0) => {
   try {
     const params = new URLSearchParams({
       latitude,
       longitude,
-      method
+      method,
+      calendarMethod: 'MATHEMATICAL',
+      adjustment: adjustment
     })
     
     const response = await fetch(`${API_BASE_URL}/hijriCalendar/${year}/${month}?${params}`)

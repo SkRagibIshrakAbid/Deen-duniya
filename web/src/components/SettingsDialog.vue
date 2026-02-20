@@ -37,6 +37,22 @@
               />
               <small>Shafi (standard) or Hanafi school</small>
             </div>
+
+            <div class="setting-item">
+              <label for="hijri-adjust">Hijri Date Adjustment</label>
+              <Slider 
+                id="hijri-adjust"
+                v-model="localSettings.hijriAdjustment" 
+                :min="-2"
+                :max="2"
+                :step="1"
+                class="full-width"
+              />
+              <div class="adjustment-display">
+                <span>{{ localSettings.hijriAdjustment > 0 ? '+' : '' }}{{ localSettings.hijriAdjustment }} day{{ Math.abs(localSettings.hijriAdjustment) !== 1 ? 's' : '' }}</span>
+              </div>
+              <small>Adjust Hijri date based on local moon sighting (-2 to +2 days)</small>
+            </div>
           </div>
         </AccordionTab>
 
@@ -215,6 +231,7 @@ import Accordion from 'primevue/accordion'
 import AccordionTab from 'primevue/accordiontab'
 import Dropdown from 'primevue/dropdown'
 import SelectButton from 'primevue/selectbutton'
+import Slider from 'primevue/slider'
 import InputSwitch from 'primevue/inputswitch'
 import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
@@ -224,7 +241,7 @@ const props = defineProps({
   visible: Boolean
 })
 
-const emit = defineEmits(['update:visible'])
+const emit = defineEmits(['update:visible', 'settingsChanged'])
 
 const settingsStore = useSettingsStore()
 
@@ -237,6 +254,7 @@ const isVisible = computed({
 const localSettings = ref({
   calculationMethod: settingsStore.calculationMethod,
   asrCalculation: settingsStore.asrCalculation,
+  hijriAdjustment: settingsStore.hijriAdjustment,
   timeFormat: settingsStore.timeFormat,
   language: settingsStore.language,
   theme: settingsStore.theme,
@@ -290,9 +308,16 @@ const handleNotificationToggle = async () => {
 }
 
 const saveSettings = () => {
+  // Check if calculation settings changed (require prayer times refresh)
+  const needsRefresh = 
+    localSettings.value.calculationMethod !== settingsStore.calculationMethod ||
+    localSettings.value.asrCalculation !== settingsStore.asrCalculation ||
+    localSettings.value.hijriAdjustment !== settingsStore.hijriAdjustment
+  
   // Save all settings
   settingsStore.setCalculationMethod(localSettings.value.calculationMethod)
   settingsStore.setAsrCalculation(localSettings.value.asrCalculation)
+  settingsStore.setHijriAdjustment(localSettings.value.hijriAdjustment)
   settingsStore.setTimeFormat(localSettings.value.timeFormat)
   settingsStore.setLanguage(localSettings.value.language)
   settingsStore.setTheme(localSettings.value.theme)
@@ -318,6 +343,11 @@ const saveSettings = () => {
     settingsStore.toggleNotifications(localSettings.value.notificationsEnabled)
   }
   
+  // Refresh prayer times if calculation settings changed
+  if (needsRefresh) {
+    emit('settingsChanged')
+  }
+  
   closeDialog()
 }
 
@@ -331,6 +361,7 @@ watch(isVisible, (newVal) => {
     localSettings.value = {
       calculationMethod: settingsStore.calculationMethod,
       asrCalculation: settingsStore.asrCalculation,
+      hijriAdjustment: settingsStore.hijriAdjustment,
       timeFormat: settingsStore.timeFormat,
       language: settingsStore.language,
       theme: settingsStore.theme,
@@ -390,6 +421,17 @@ watch(isVisible, (newVal) => {
 
 .full-width {
   width: 100%;
+}
+
+.adjustment-display {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem;
+  background-color: var(--bg-color);
+  border-radius: 0.5rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin-top: 0.5rem;
 }
 
 .sub-setting {

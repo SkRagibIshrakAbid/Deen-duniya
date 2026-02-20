@@ -10,6 +10,7 @@ export const useSettingsStore = defineStore('settings', () => {
   // State
   const calculationMethod = ref(3) // Default: Muslim World League
   const asrCalculation = ref(0) // Default: Shafi (Standard)
+  const hijriAdjustment = ref(0) // Hijri date adjustment (-2 to +2 days)
   const timeFormat = ref('24') // '12' or '24'
   const language = ref('en') // 'en' or 'ar'
   const theme = ref('light') // 'light', 'dark', 'auto'
@@ -85,6 +86,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   const setAsrCalculation = (method) => {
     asrCalculation.value = method
+    saveToLocalStorage()
+  }
+
+  const setHijriAdjustment = (adjustment) => {
+    console.log('Setting hijri adjustment to:', adjustment)
+    hijriAdjustment.value = adjustment
     saveToLocalStorage()
   }
 
@@ -180,6 +187,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const settings = {
       calculationMethod: calculationMethod.value,
       asrCalculation: asrCalculation.value,
+      hijriAdjustment: hijriAdjustment.value,
       timeFormat: timeFormat.value,
       language: language.value,
       theme: theme.value,
@@ -210,6 +218,8 @@ export const useSettingsStore = defineStore('settings', () => {
         const settings = JSON.parse(saved)
         calculationMethod.value = settings.calculationMethod ?? 3
         asrCalculation.value = settings.asrCalculation ?? 0
+        hijriAdjustment.value = settings.hijriAdjustment ?? 0
+        console.log('Loaded hijri adjustment from localStorage:', hijriAdjustment.value)
         timeFormat.value = settings.timeFormat ?? '24'
         language.value = settings.language ?? 'en'
         theme.value = settings.theme ?? 'light'
@@ -237,6 +247,9 @@ export const useSettingsStore = defineStore('settings', () => {
     } else {
       applyTheme()
     }
+    
+    // Force save to ensure new fields (like hijriAdjustment) are persisted
+    saveToLocalStorage()
   }
 
   // Initialize
@@ -251,6 +264,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // State
     calculationMethod,
     asrCalculation,
+    hijriAdjustment,
     timeFormat,
     language,
     theme,
@@ -280,6 +294,7 @@ export const useSettingsStore = defineStore('settings', () => {
     // Actions
     setCalculationMethod,
     setAsrCalculation,
+    setHijriAdjustment,
     setTimeFormat,
     setLanguage,
     setTheme,

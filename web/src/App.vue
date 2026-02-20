@@ -88,6 +88,7 @@
     <!-- Settings Dialog -->
     <SettingsDialog 
       v-model:visible="showSettings" 
+      @settings-changed="onSettingsChanged"
     />
 
     <!-- Toast for notifications -->
@@ -138,6 +139,11 @@ const toggleNotifications = async () => {
 
 const onLocationSet = async () => {
   showLocationDialog.value = false
+  await prayerTimesStore.fetchTodayPrayerTimes()
+}
+
+const onSettingsChanged = async () => {
+  // Refresh prayer times when calculation settings change
   await prayerTimesStore.fetchTodayPrayerTimes()
 }
 

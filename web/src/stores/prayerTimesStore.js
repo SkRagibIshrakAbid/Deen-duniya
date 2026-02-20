@@ -117,17 +117,24 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
 
     try {
       const today = dayjs().format('DD-MM-YYYY')
+      console.log('Fetching prayer times with hijri adjustment:', settingsStore.hijriAdjustment)
       const data = await getPrayerTimes(
         today,
         locationStore.latitude,
         locationStore.longitude,
         settingsStore.calculationMethod,
-        settingsStore.asrCalculation
+        settingsStore.asrCalculation,
+        settingsStore.hijriAdjustment
       )
 
       todayTimings.value = data.timings
       dateInfo.value = data.date
       lastUpdated.value = dayjs()
+      
+      console.log('Prayer times fetched successfully')
+      console.log('Hijri date from store:', dateInfo.value.hijri)
+      console.log('Is Ramadan:', dateInfo.value.hijri.month.number === 9)
+      console.log('Ramadan day:', dateInfo.value.hijri.day)
 
       // Save to localStorage
       saveToLocalStorage()
@@ -158,7 +165,8 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
         locationStore.latitude,
         locationStore.longitude,
         settingsStore.calculationMethod,
-        settingsStore.asrCalculation
+        settingsStore.asrCalculation,
+        settingsStore.hijriAdjustment
       )
 
       monthlyTimings.value = data
@@ -174,7 +182,8 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     const data = {
       todayTimings: todayTimings.value,
       dateInfo: dateInfo.value,
-      lastUpdated: lastUpdated.value?.toISOString()
+      lastUpdated: lastUpdated.value?.toISOString(),
+      hijriAdjustment: useSettingsStore().hijriAdjustment
     }
     localStorage.setItem('deen-duniya-prayer-times', JSON.stringify(data))
   }
@@ -184,17 +193,26 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     if (saved) {
       try {
         const data = JSON.parse(saved)
+        const settingsStore = useSettingsStore()
         
         // Check if data is from today
         const savedDate = dayjs(data.lastUpdated)
         const now = dayjs()
         
-        if (savedDate.isSame(now, 'day')) {
+        // Check if hijri adjustment has changed
+        const adjustmentChanged = data.hijriAdjustment !== undefined && 
+                                  data.hijriAdjustment !== settingsStore.hijriAdjustment
+        
+        if (savedDate.isSame(now, 'day') && !adjustmentChanged) {
           todayTimings.value = data.todayTimings
           dateInfo.value = data.dateInfo
           lastUpdated.value = savedDate
+          console.log('Using cached prayer times')
         } else {
-          // Data is stale, fetch fresh data
+          // Data is stale or adjustment changed, fetch fresh data
+          if (adjustmentChanged) {
+            console.log('Hijri adjustment changed, fetching fresh data')
+          }
           fetchTodayPrayerTimes()
         }
       } catch (error) {
