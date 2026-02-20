@@ -97,6 +97,12 @@
       @calibrated="onCalibrated"
     />
 
+    <!-- Notification Permission Dialog -->
+    <NotificationPermissionDialog
+      v-model:visible="showNotificationPermission"
+      @completed="onNotificationPermissionCompleted"
+    />
+
     <!-- Toast for notifications -->
     <Toast />
   </div>
@@ -121,6 +127,7 @@ import IslamicCalendar from './components/IslamicCalendar.vue'
 import LocationDialog from './components/LocationDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import HijriCalibrationDialog from './components/HijriCalibrationDialog.vue'
+import NotificationPermissionDialog from './components/NotificationPermissionDialog.vue'
 
 // Stores
 const locationStore = useLocationStore()
@@ -131,6 +138,7 @@ const settingsStore = useSettingsStore()
 const showLocationDialog = ref(false)
 const showSettings = ref(false)
 const showCalibrationDialog = ref(false)
+const showNotificationPermission = ref(false)
 const currentDate = ref(getCurrentDateInfo())
 
 // Computed
@@ -156,12 +164,33 @@ const onLocationSet = async () => {
     setTimeout(() => {
       showCalibrationDialog.value = true
     }, 500)
+  } else {
+    // If not Ramadan or already calibrated, check for notification permission prompt
+    checkNotificationPermissionPrompt()
   }
 }
 
 const onCalibrated = async (adjustment) => {
   // Refresh prayer times with new adjustment
   await prayerTimesStore.fetchTodayPrayerTimes()
+  
+  // After calibration, check for notification permission prompt
+  checkNotificationPermissionPrompt()
+}
+
+const checkNotificationPermissionPrompt = () => {
+  const hasShownPrompt = localStorage.getItem('notificationPromptShown')
+  if (!hasShownPrompt) {
+    setTimeout(() => {
+      showNotificationPermission.value = true
+    }, 500)
+  }
+}
+
+const onNotificationPermissionCompleted = (enabled) => {
+  if (enabled) {
+    setupNotifications()
+  }
 }
 
 const onSettingsChanged = async () => {

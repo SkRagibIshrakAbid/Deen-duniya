@@ -131,6 +131,16 @@
           </div>
         </TabPanel>
       </TabView>
+
+      <!-- Privacy Note -->
+      <Message severity="info" :closable="false" class="privacy-note">
+        <template #messageicon>
+          <i class="pi pi-shield"></i>
+        </template>
+        <strong>Privacy Notice:</strong> Your location data is only used locally in your browser to calculate accurate prayer times. 
+        We do not collect, store, or share your location information with any third party. 
+        All data stays on your device.
+      </Message>
     </div>
 
     <template #footer>
@@ -295,6 +305,15 @@ watch(isVisible, (newVal) => {
 .error-message,
 .detected-info {
   margin: 1rem 0;
+}
+
+.privacy-note {
+  margin-top: 1.5rem;
+}
+
+.privacy-note :deep(.p-message-text) {
+  font-size: 0.875rem;
+  line-height: 1.5;
 }
 
 .search-section {
