@@ -8,55 +8,44 @@
     </template>
     <template #content>
       <div class="ramadan-content">
-        <!-- Sehri (Suhoor) Section -->
-        <div class="ramadan-time-section sehri-section">
+        <!-- Show either Sehri or Iftar based on time -->
+        <div v-if="showSehri" class="ramadan-time-section sehri-section featured">
           <div class="section-icon">
             <i class="pi pi-moon"></i>
           </div>
           <div class="section-content">
-            <h3>Sehri (Suhoor)</h3>
+            <h3>{{ isNextDaySehri ? "Tomorrow's " : "" }}Sehri (Suhoor)</h3>
             <div class="time-display">
               <span class="time-label">Ends at</span>
               <span class="time-value">{{ formatTime(sehriTime, timeFormat) }}</span>
             </div>
             <div class="countdown-container">
-              <div v-if="sehriCountdown && !sehriPassed" class="countdown-text">
+              <div v-if="sehriCountdown" class="countdown-text">
                 <i class="pi pi-clock"></i>
                 Time remaining: <strong>{{ sehriCountdown }}</strong>
-              </div>
-              <div v-else class="countdown-text passed">
-                <i class="pi pi-check-circle"></i>
-                Sehri time has passed
               </div>
             </div>
           </div>
         </div>
 
-        <Divider />
-
         <!-- Iftar Section -->
-        <div class="ramadan-time-section iftar-section">
+        <div v-else class="ramadan-time-section iftar-section featured">
           <div class="section-icon">
             <i class="pi pi-sun"></i>
           </div>
           <div class="section-content">
-            <h3>Iftar</h3>
+            <h3>Iftar (Breaking Fast)</h3>
             <div class="time-display">
               <span class="time-label">Maghrib at</span>
               <span class="time-value">{{ formatTime(iftarTime, timeFormat) }}</span>
             </div>
             <div class="countdown-container">
-              <div v-if="iftarCountdown && !iftarPassed" class="countdown-text">
+              <div v-if="iftarCountdown" class="countdown-text">
                 <i class="pi pi-clock"></i>
                 Time until Iftar: <strong>{{ iftarCountdown }}</strong>
               </div>
-              <div v-else-if="iftarPassed" class="countdown-text passed">
-                <i class="pi pi-check-circle"></i>
-                May Allah accept your fast
-              </div>
             </div>
             <ProgressBar 
-              v-if="!iftarPassed" 
               :value="fastingProgress" 
               :showValue="false" 
               class="fasting-progress"
@@ -101,13 +90,12 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { usePrayerTimesStore } from '../stores/prayerTimesStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { formatTime, formatDetailedDuration, getTimeUntilPrayer } from '../utils/dateUtils'
+import { formatTime, formatDetailedDuration } from '../utils/dateUtils'
 import dayjs from 'dayjs'
 
 import Card from 'primevue/card'
 import Panel from 'primevue/panel'
 import ProgressBar from 'primevue/progressbar'
-import Divider from 'primevue/divider'
 
 const prayerTimesStore = usePrayerTimesStore()
 const settingsStore = useSettingsStore()
@@ -118,6 +106,7 @@ const iftarCountdown = ref('')
 const sehriPassed = ref(false)
 const iftarPassed = ref(false)
 const fastingProgress = ref(0)
+const isNextDaySehri = ref(false)
 let countdownInterval = null
 
 // Computed
@@ -126,50 +115,77 @@ const iftarTime = computed(() => prayerTimesStore.iftarTime)
 const ramadanDay = computed(() => prayerTimesStore.ramadanDay)
 const timeFormat = computed(() => settingsStore.timeFormat)
 
+// Determine which section to show
+const showSehri = computed(() => {
+  const now = dayjs()
+  
+  if (!sehriTime.value || !iftarTime.value) return true
+  
+  const [sehriHours, sehriMinutes] = sehriTime.value.split(':')
+  const [iftarHours, iftarMinutes] = iftarTime.value.split(':')
+  
+  const sehriTimeObj = now.clone().hour(parseInt(sehriHours)).minute(parseInt(sehriMinutes)).second(0)
+  const iftarTimeObj = now.clone().hour(parseInt(iftarHours)).minute(parseInt(iftarMinutes)).second(0)
+  
+  // Before Sehri: Show Sehri
+  if (now.isBefore(sehriTimeObj)) {
+    return true
+  }
+  
+  // After Iftar: Show next day's Sehri
+  if (now.isAfter(iftarTimeObj)) {
+    return true
+  }
+  
+  // Between Sehri and Iftar: Show Iftar
+  return false
+})
+
 // Methods
 const updateCountdowns = () => {
   const now = dayjs()
   
-  // Sehri countdown
-  if (sehriTime.value) {
-    const msUntilSehri = getTimeUntilPrayer(sehriTime.value)
-    if (msUntilSehri > 0) {
-      sehriCountdown.value = formatDetailedDuration(msUntilSehri)
-      sehriPassed.value = false
-    } else {
-      sehriPassed.value = true
-    }
-  }
+  if (!sehriTime.value || !iftarTime.value) return
   
-  // Iftar countdown
-  if (iftarTime.value) {
-    const msUntilIftar = getTimeUntilPrayer(iftarTime.value)
-    if (msUntilIftar > 0) {
-      iftarCountdown.value = formatDetailedDuration(msUntilIftar)
-      iftarPassed.value = false
-      
-      // Calculate fasting progress (from Fajr to Maghrib)
-      if (sehriTime.value) {
-        const [sehriHours, sehriMinutes] = sehriTime.value.split(':')
-        const [iftarHours, iftarMinutes] = iftarTime.value.split(':')
-        
-        const sehriTimeObj = now.clone().hour(parseInt(sehriHours)).minute(parseInt(sehriMinutes)).second(0)
-        const iftarTimeObj = now.clone().hour(parseInt(iftarHours)).minute(parseInt(iftarMinutes)).second(0)
-        
-        if (now.isAfter(sehriTimeObj) && now.isBefore(iftarTimeObj)) {
-          const totalFastingTime = iftarTimeObj.diff(sehriTimeObj)
-          const elapsedTime = now.diff(sehriTimeObj)
-          fastingProgress.value = (elapsedTime / totalFastingTime) * 100
-        } else if (now.isBefore(sehriTimeObj)) {
-          fastingProgress.value = 0
-        } else {
-          fastingProgress.value = 100
-        }
-      }
-    } else {
-      iftarPassed.value = true
-      fastingProgress.value = 100
-    }
+  const [sehriHours, sehriMinutes] = sehriTime.value.split(':')
+  const [iftarHours, iftarMinutes] = iftarTime.value.split(':')
+  
+  let sehriTimeObj = now.clone().hour(parseInt(sehriHours)).minute(parseInt(sehriMinutes)).second(0)
+  const iftarTimeObj = now.clone().hour(parseInt(iftarHours)).minute(parseInt(iftarMinutes)).second(0)
+  
+  // Check if we need to show next day's Sehri
+  if (now.isAfter(iftarTimeObj)) {
+    // After Iftar, show tomorrow's Sehri
+    sehriTimeObj = sehriTimeObj.add(1, 'day')
+    isNextDaySehri.value = true
+    sehriPassed.value = false
+    iftarPassed.value = true
+    
+    const msUntilSehri = sehriTimeObj.diff(now)
+    sehriCountdown.value = formatDetailedDuration(msUntilSehri)
+    fastingProgress.value = 0
+  } else if (now.isBefore(sehriTimeObj)) {
+    // Before Sehri, show today's Sehri
+    isNextDaySehri.value = false
+    sehriPassed.value = false
+    iftarPassed.value = false
+    
+    const msUntilSehri = sehriTimeObj.diff(now)
+    sehriCountdown.value = formatDetailedDuration(msUntilSehri)
+    fastingProgress.value = 0
+  } else {
+    // Between Sehri and Iftar, show Iftar countdown and fasting progress
+    isNextDaySehri.value = false
+    sehriPassed.value = true
+    iftarPassed.value = false
+    
+    const msUntilIftar = iftarTimeObj.diff(now)
+    iftarCountdown.value = formatDetailedDuration(msUntilIftar)
+    
+    // Calculate fasting progress
+    const totalFastingTime = iftarTimeObj.diff(sehriTimeObj)
+    const elapsedTime = now.diff(sehriTimeObj)
+    fastingProgress.value = Math.min(100, Math.max(0, (elapsedTime / totalFastingTime) * 100))
   }
 }
 
@@ -250,6 +266,12 @@ onUnmounted(() => {
   box-shadow: var(--shadow);
 }
 
+.ramadan-time-section.featured {
+  background: linear-gradient(135deg, rgba(44, 95, 45, 0.05), rgba(67, 160, 71, 0.05));
+  border: 2px solid var(--primary-color);
+  padding: 2rem;
+}
+
 .section-icon {
   width: 60px;
   height: 60px;
@@ -261,6 +283,12 @@ onUnmounted(() => {
   font-size: 1.75rem;
   color: white;
   flex-shrink: 0;
+}
+
+.featured .section-icon {
+  width: 80px;
+  height: 80px;
+  font-size: 2.25rem;
 }
 
 .section-content {
