@@ -9,6 +9,9 @@
 ![PrimeVue](https://img.shields.io/badge/PrimeVue-4-41B883)
 ![License](https://img.shields.io/badge/License-MIT-blue)
 
+![Status](https://img.shields.io/badge/Web%20Version-Work%20in%20Progress-yellow)
+![Status](https://img.shields.io/badge/Desktop%20Version-Starting%20Soon-blue)
+
 [Features](#-features) • [Screenshots](#-screenshots) • [Installation](#-installation) • [Development](#-development) • [Tech Stack](#-tech-stack)
 
 </div>
@@ -17,7 +20,43 @@
 
 ## 📖 Overview
 
-Deen Duniya is a comprehensive Islamic prayer times application available as both a web and desktop application. It provides accurate prayer times, Islamic calendar, Ramadan features, and smart notifications to help Muslims maintain their daily prayers.
+Deen Duniya is a comprehensive Islamic prayer times application being developed as both a web and desktop application. It provides accurate prayer times, Islamic calendar, Ramadan features, and smart notifications to help Muslims maintain their daily prayers.
+
+**Current Status:**
+- 🚧 **Web Version:** Active development - functional and feature-rich
+- 📅 **Desktop Version:** Starting soon - basic setup complete
+
+## 🚦 Project Status
+
+### Web Version 🚧
+**Status:** Work in Progress
+
+The web application is actively under development and is functional with the following features:
+- ✅ Core prayer times functionality
+- ✅ Islamic calendar with Hijri dates
+- ✅ Ramadan-specific features
+- ✅ Smart notifications system
+- ✅ Location management (GPS, cities, manual)
+- ✅ Hijri date calibration for local moon sighting
+- ✅ Comprehensive settings and customization
+- ✅ Dark/Light theme support
+- ✅ Responsive design for all devices
+- ✅ First-time user onboarding flow
+
+**Try it:** The web version can be run locally following the [Installation](#-installation) instructions below.
+
+### Desktop Version 📅
+**Status:** Starting Soon
+
+Desktop application development will begin soon. The basic Electron setup is complete, and we'll be implementing:
+- 🔜 Desktop widgets for prayer times
+- 🔜 System tray enhancements
+- 🔜 Auto-start functionality
+- 🔜 Offline caching
+- 🔜 Native desktop notifications
+- 🔜 Always-on-top widget mode
+
+**Note:** Currently, the basic Electron wrapper exists but the desktop-specific features are not yet implemented.
 
 ## ✨ Features
 
@@ -58,11 +97,12 @@ Deen Duniya is a comprehensive Islamic prayer times application available as bot
 - **Languages**: English (Arabic coming soon)
 - **Notification Settings**: Granular control over all alerts
 
-### 💻 Desktop Features (Electron)
-- **System Tray**: Quick access from taskbar
-- **Desktop Widgets**: Always-visible prayer time widgets
-- **Auto-start**: Optional launch on system boot
-- **Native Notifications**: Desktop notification integration
+### 💻 Desktop Features (Coming Soon)
+- **System Tray**: Quick access from taskbar (basic implementation exists)
+- **Desktop Widgets**: Always-visible prayer time widgets (planned)
+- **Auto-start**: Optional launch on system boot (planned)
+- **Native Notifications**: Desktop notification integration (planned)
+- **Offline Mode**: Cached prayer times working offline (planned)
 
 ## 📁 Project Structure
 
@@ -106,7 +146,9 @@ deen-duniya/
 
 ## 🚀 Installation
 
-### Web Application
+### Web Application (Recommended - Work in Progress)
+
+The web application is functional and can be run locally:
 
 1. Navigate to the web directory:
 ```bash
@@ -125,7 +167,14 @@ npm run dev
 
 4. Open browser at `http://localhost:5173`
 
-### Desktop Application
+5. Build for production:
+```bash
+npm run build
+```
+
+### Desktop Application (Coming Soon)
+
+The desktop version is in early stages. Basic Electron setup exists but desktop-specific features are not yet implemented.
 
 1. First, build the web application:
 ```bash
@@ -148,13 +197,7 @@ npm install
 npm run dev
 ```
 
-Or build for production:
-```bash
-npm run build        # Current platform
-npm run build:win    # Windows
-npm run build:mac    # macOS
-npm run build:linux  # Linux
-```
+**Note:** Desktop widgets, system tray enhancements, and other desktop-specific features will be implemented soon.
 
 ## 🛠️ Tech Stack
 
@@ -204,31 +247,40 @@ npm run build:linux  # Linux
 
 ## 🗺️ Roadmap
 
-### Phase 1: Web Application ✅
+### Phase 1: Web Application 🚧 Work in Progress
 - [x] Prayer times with live countdown
 - [x] Location detection and management
 - [x] Islamic calendar integration
-- [x] Ramadan features
+- [x] Ramadan features with smart Sehri/Iftar switching
 - [x] Browser notifications
 - [x] Settings and customization
 - [x] Theme support (Light/Dark)
+- [x] Hijri date adjustment for local moon sighting
+- [x] First-time user onboarding (Location + Hijri Calibration + Notifications)
+- [x] Privacy-focused location handling
+- [ ] PWA (Progressive Web App) support
+- [ ] Qibla direction finder
+- [ ] Prayer time history
+- [ ] Multiple language support
 
-### Phase 2: Desktop Application 🚧
-- [x] Electron setup
-- [x] System tray integration
-- [ ] Desktop widgets (In Progress)
+### Phase 2: Desktop Application 📅 Starting Soon
+- [x] Electron setup and configuration
+- [x] System tray integration (basic)
+- [ ] Desktop widgets (To be implemented)
 - [ ] Taskbar integration
 - [ ] Auto-start configuration
 - [ ] Global keyboard shortcuts
+- [ ] Offline prayer times caching
+- [ ] Native desktop notifications
+- [ ] Always-on-top prayer time widget
 
-### Phase 3: Enhancements 📋
-- [ ] Qibla direction finder
+### Phase 3: Enhancements 📋 Planned
 - [ ] 99 Names of Allah
 - [ ] Daily Hadith/Quotes
 - [ ] Prayer statistics and tracking
-- [ ] Multiple language support
-- [ ] PWA (Progressive Web App)
+- [ ] Tasbih counter
 - [ ] Mobile apps (iOS/Android)
+- [ ] Advanced customization options
 
 ## 🤝 Contributing
 
