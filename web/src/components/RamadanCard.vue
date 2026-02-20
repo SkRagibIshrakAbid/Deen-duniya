@@ -8,65 +8,34 @@
     </template>
     <template #content>
       <div class="ramadan-content">
-        <!-- Show either Sehri or Iftar based on time -->
-        <div v-if="showSehri" class="ramadan-time-section sehri-section featured">
-          <div class="section-icon">
-            <i class="pi pi-moon"></i>
+        <!-- Featured Time (Sehri or Iftar) Banner -->
+        <div v-if="showSehri" class="featured-time-banner sehri-banner">
+          <div class="featured-info">
+            <span class="featured-label">{{ isNextDaySehri ? "Tomorrow's " : "" }}Sehri (Suhoor)</span>
+            <h2 class="featured-time">{{ formatTime(sehriTime, timeFormat) }}</h2>
           </div>
-          <div class="section-content">
-            <h3>{{ isNextDaySehri ? "Tomorrow's " : "" }}Sehri (Suhoor)</h3>
-            <div class="time-display">
-              <span class="time-label">Ends at</span>
-              <span class="time-value">{{ formatTime(sehriTime, timeFormat) }}</span>
-            </div>
-            <div class="countdown-container">
-              <div v-if="sehriCountdown" class="countdown-text">
-                <i class="pi pi-clock"></i>
-                Time remaining: <strong>{{ sehriCountdown }}</strong>
-              </div>
-            </div>
+          <div class="countdown">
+            <div class="countdown-display">{{ sehriCountdown }}</div>
           </div>
         </div>
 
-        <!-- Iftar Section -->
-        <div v-else class="ramadan-time-section iftar-section featured">
-          <div class="section-icon">
-            <i class="pi pi-sun"></i>
+        <div v-else class="featured-time-banner iftar-banner">
+          <div class="featured-info">
+            <span class="featured-label">Iftar (Breaking Fast)</span>
+            <h2 class="featured-time">{{ formatTime(iftarTime, timeFormat) }}</h2>
           </div>
-          <div class="section-content">
-            <h3>Iftar (Breaking Fast)</h3>
-            <div class="time-display">
-              <span class="time-label">Maghrib at</span>
-              <span class="time-value">{{ formatTime(iftarTime, timeFormat) }}</span>
-            </div>
-            <div class="countdown-container">
-              <div v-if="iftarCountdown" class="countdown-text">
-                <i class="pi pi-clock"></i>
-                Time until Iftar: <strong>{{ iftarCountdown }}</strong>
-              </div>
-            </div>
+          <div class="countdown">
+            <div class="countdown-display">{{ iftarCountdown }}</div>
             <ProgressBar 
               :value="fastingProgress" 
               :showValue="false" 
-              class="fasting-progress"
-            >
-              <template #value>
-                <div class="progress-label">{{ fastingProgress.toFixed(0) }}% Complete</div>
-              </template>
-            </ProgressBar>
+              class="countdown-progress"
+            />
           </div>
         </div>
 
-        <!-- Ramadan Information -->
-        <div class="ramadan-info">
-          <Panel header="Did you know?" toggleable>
-            <div class="info-content">
-              <p>{{ getRamadanMessage() }}</p>
-            </div>
-          </Panel>
-        </div>
-
         <!-- Ramadan Stats -->
+        <Divider />
         <div class="ramadan-stats">
           <div class="stat-card">
             <span class="stat-label">Days Completed</span>
@@ -80,6 +49,15 @@
             <span class="stat-label">Progress</span>
             <span class="stat-value">{{ ((ramadanDay / 30) * 100).toFixed(0) }}%</span>
           </div>
+        </div>
+
+        <!-- Ramadan Information -->
+        <div class="ramadan-info">
+          <Panel header="Did you know?" toggleable>
+            <div class="info-content">
+              <p>{{ getRamadanMessage() }}</p>
+            </div>
+          </Panel>
         </div>
       </div>
     </template>
@@ -96,6 +74,7 @@ import dayjs from 'dayjs'
 import Card from 'primevue/card'
 import Panel from 'primevue/panel'
 import ProgressBar from 'primevue/progressbar'
+import Divider from 'primevue/divider'
 
 const prayerTimesStore = usePrayerTimesStore()
 const settingsStore = useSettingsStore()
@@ -256,97 +235,50 @@ onUnmounted(() => {
   gap: 2rem;
 }
 
-.ramadan-time-section {
-  display: flex;
-  gap: 1.5rem;
-  align-items: flex-start;
-  padding: 1.5rem;
-  background-color: var(--surface-color);
-  border-radius: 1rem;
-  box-shadow: var(--shadow);
-}
-
-.ramadan-time-section.featured {
-  background: linear-gradient(135deg, rgba(44, 95, 45, 0.05), rgba(67, 160, 71, 0.05));
-  border: 2px solid var(--primary-color);
-  padding: 2rem;
-}
-
-.section-icon {
-  width: 60px;
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.featured-time-banner {
   background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-  border-radius: 50%;
-  font-size: 1.75rem;
   color: white;
-  flex-shrink: 0;
+  padding: 2rem;
+  border-radius: 1rem;
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 2rem;
 }
 
-.featured .section-icon {
-  width: 80px;
-  height: 80px;
-  font-size: 2.25rem;
-}
-
-.section-content {
+.featured-info {
   flex: 1;
 }
 
-.section-content h3 {
-  font-size: 1.5rem;
-  margin-bottom: 1rem;
-  color: var(--primary-color);
+.featured-label {
+  font-size: 0.875rem;
+  opacity: 0.9;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
-.time-display {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.time-label {
-  color: var(--text-secondary);
-}
-
-.time-value {
-  font-size: 1.75rem;
+.featured-time {
+  font-size: 2.5rem;
+  margin: 0.5rem 0;
   font-weight: 700;
-  color: var(--primary-color);
+}
+
+.countdown {
+  flex: 1;
+  text-align: right;
+}
+
+.countdown-display {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
   font-variant-numeric: tabular-nums;
 }
 
-.countdown-container {
-  margin-top: 1rem;
-}
-
-.countdown-text {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.1rem;
-  color: var(--text-color);
-}
-
-.countdown-text strong {
-  color: var(--primary-color);
-}
-
-.countdown-text.passed {
-  color: var(--text-secondary);
-}
-
-.fasting-progress {
-  margin-top: 1rem;
-  height: 12px;
-}
-
-.progress-label {
-  font-size: 0.75rem;
-  font-weight: 600;
+.countdown-progress {
+  width: 100%;
+  height: 8px;
 }
 
 .ramadan-info {
@@ -363,6 +295,7 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .stat-card {
@@ -371,9 +304,9 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 1.5rem;
-  background-color: var(--surface-color);
+  background-color: var(--bg-color);
   border: 2px solid var(--border-color);
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   text-align: center;
   transition: all 0.3s;
 }
@@ -398,15 +331,22 @@ onUnmounted(() => {
 }
 
 @media (max-width: 768px) {
-  .ramadan-time-section {
+  .featured-time-banner {
     flex-direction: column;
-    align-items: center;
     text-align: center;
   }
   
-  .time-display {
-    flex-direction: column;
-    gap: 0.5rem;
+  .countdown {
+    text-align: center;
+    width: 100%;
+  }
+  
+  .featured-time {
+    font-size: 2rem;
+  }
+  
+  .ramadan-stats {
+    grid-template-columns: 1fr;
   }
 }
 </style>
