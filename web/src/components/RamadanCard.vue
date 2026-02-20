@@ -200,8 +200,7 @@ onUnmounted(() => {
 <style scoped>
 .ramadan-card {
   margin-bottom: 2rem;
-  background: linear-gradient(135deg, rgba(44, 95, 45, 0.05) 0%, rgba(151, 190, 90, 0.05) 100%);
-  border: 2px solid var(--primary-color);
+  background-color: var(--surface-color);
   box-shadow: var(--shadow-lg);
 }
 
@@ -240,7 +239,6 @@ onUnmounted(() => {
   color: white;
   padding: 2rem;
   border-radius: 1rem;
-  margin-bottom: 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;

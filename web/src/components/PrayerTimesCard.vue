@@ -17,16 +17,23 @@
       </div>
 
       <div v-else-if="todayTimings" class="prayer-times">
-        <!-- Next Prayer Countdown -->
+        <!-- Current & Next Prayer Countdown -->
         <div v-if="nextPrayer" class="next-prayer-banner">
-          <div class="next-prayer-info">
-            <span class="next-prayer-label">Next Prayer</span>
-            <h2 class="next-prayer-name">{{ nextPrayer.name }}</h2>
-            <span class="next-prayer-time">{{ formatTime(nextPrayer.time, timeFormat) }}</span>
+          <div v-if="currentPrayer" class="current-prayer-section">
+            <span class="status-label">Current Prayer</span>
+            <div class="status-value">{{ currentPrayer.name }}</div>
           </div>
-          <div class="countdown">
-            <div class="countdown-display">{{ countdown }}</div>
-            <ProgressBar :value="countdownProgress" :showValue="false" class="countdown-progress" />
+          
+          <div class="next-prayer-row">
+            <div class="next-prayer-section">
+              <span class="status-label">Next Prayer</span>
+              <div class="status-value">{{ nextPrayer.name }}</div>
+              <span class="status-time">{{ formatTime(nextPrayer.time, timeFormat) }}</span>
+            </div>
+            <div class="countdown">
+              <div class="countdown-display">{{ countdown }}</div>
+              <ProgressBar :value="countdownProgress" :showValue="false" class="countdown-progress" />
+            </div>
           </div>
         </div>
 
@@ -239,9 +246,50 @@ onUnmounted(() => {
   border-radius: 1rem;
   margin-bottom: 2rem;
   display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.current-prayer-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.next-prayer-row {
+  display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 2rem;
+}
+
+.next-prayer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.status-label {
+  font-size: 0.75rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.status-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+}
+
+.status-time {
+  font-size: 1rem;
+  opacity: 0.95;
+  margin-top: 0.25rem;
 }
 
 .next-prayer-info {
@@ -359,6 +407,23 @@ onUnmounted(() => {
   right: -8px;
 }
 
+.next-badge :deep(.p-tag),
+.current-badge :deep(.p-tag) {
+  background-color: var(--tag-bg) !important;
+  color: var(--tag-color) !important;
+  opacity: 1 !important;
+}
+
+.next-badge :deep(.p-tag) {
+  --tag-bg: #10b981;
+  --tag-color: white;
+}
+
+.current-badge :deep(.p-tag) {
+  --tag-bg: #3b82f6;
+  --tag-color: white;
+}
+
 .additional-times {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -402,8 +467,22 @@ onUnmounted(() => {
 
 @media (max-width: 768px) {
   .next-prayer-banner {
+    padding: 1.5rem;
+  }
+  
+  .current-prayer-section {
+    padding-bottom: 0.75rem;
+  }
+  
+  .next-prayer-row {
     flex-direction: column;
     text-align: center;
+    gap: 1.5rem;
+  }
+  
+  .next-prayer-section {
+    width: 100%;
+    align-items: center;
   }
   
   .countdown {
@@ -411,8 +490,8 @@ onUnmounted(() => {
     width: 100%;
   }
   
-  .next-prayer-name {
-    font-size: 2rem;
+  .status-value {
+    font-size: 1.5rem;
   }
   
   .prayers-grid {
