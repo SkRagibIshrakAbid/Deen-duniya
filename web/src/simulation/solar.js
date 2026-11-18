@@ -148,11 +148,11 @@ export const eventAngles = (lat, dec, p) => {
 }
 
 export const PRAYERS = {
-  Fajr: { color: '#7c9cff', label: 'Fajr' },
-  Dhuhr: { color: '#ffd166', label: 'Dhuhr' },
-  Asr: { color: '#ff9f43', label: 'Asr' },
-  Maghrib: { color: '#ff5d8f', label: 'Maghrib' },
-  Isha: { color: '#9b6bff', label: 'Isha' }
+  Fajr: { color: '#5b8cff', label: 'Fajr' },
+  Dhuhr: { color: '#ffcc33', label: 'Dhuhr' },
+  Asr: { color: '#ff8a1f', label: 'Asr' },
+  Maghrib: { color: '#ff3d7f', label: 'Maghrib' },
+  Isha: { color: '#8f5bff', label: 'Isha' }
 }
 
 /**

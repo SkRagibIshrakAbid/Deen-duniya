@@ -107,6 +107,7 @@ export class GlobeScene {
     const blank = new THREE.DataTexture(new Uint8Array([10, 20, 40, 255]), 1, 1)
     blank.needsUpdate = true
 
+    this.reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     this.earthUniforms = {
       uDay: { value: blank },
       uNight: { value: blank },
@@ -120,6 +121,7 @@ export class GlobeScene {
       uAsrFactor: { value: 1 },
       uBands: { value: 1 },
       uLights: { value: 1 },
+      uTime: { value: 0 },
       // sRGB components (the shader blends overlays in sRGB space)
       uColors: {
         value: Object.values(PRAYERS).map((p) => {
@@ -144,6 +146,7 @@ export class GlobeScene {
     this.cloudUniforms = {
       uClouds: { value: blank },
       uSunDir: this.earthUniforms.uSunDir,
+      uBands: this.earthUniforms.uBands,
       uOpacity: { value: 0.55 }
     }
     this.clouds = new THREE.Mesh(
@@ -341,6 +344,9 @@ export class GlobeScene {
       const u = this.earthUniforms.uBands
       u.value += (this.targetBands - u.value) * Math.min(1, dt * 6)
     }
+
+    // edge shimmer (held still for reduced motion)
+    if (!this.reducedMotion) this.earthUniforms.uTime.value = (this.earthUniforms.uTime.value + dt) % 3600
 
     // slow cloud drift
     this.clouds.rotation.y += dt * 0.004

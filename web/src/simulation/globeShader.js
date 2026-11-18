@@ -28,6 +28,7 @@ export const earthFragment = /* glsl */ `
   uniform float uAsrFactor;
   uniform float uBands;        // 0..1 overlay strength
   uniform float uLights;       // 0..1 city lights
+  uniform float uTime;         // seconds, drives the edge shimmer
   uniform vec3 uColors[5];     // Fajr, Dhuhr, Asr, Maghrib, Isha
 
   varying vec3 vPos;
@@ -52,6 +53,21 @@ export const earthFragment = /* glsl */ `
   // Anti-aliased line: dist and width in the same units
   float line(float dist, float width, float px) {
     return 1.0 - smoothstep(width * px * 0.5, width * px * 0.5 + px, dist);
+  }
+
+  // Glowing start edge. d: signed arc distance (deg), positive inside the starting window
+  vec3 startEdge(vec3 col, float d, vec3 bc, float px, float shimmer) {
+    float ad = abs(d);
+    if (ad > 40.0 * px) return col;   // cheap early-out far from the edge
+    // faint dark seam just ahead of the edge (outgoing side) so it reads as a cut
+    float seam = (1.0 - smoothstep(0.0, 2.0 * px, abs(d + 3.0 * px))) * step(d, 0.0);
+    col *= 1.0 - 0.35 * seam * uBands;
+    // soft halo on both sides
+    col += bc * exp(-ad / (7.0 * px)) * 0.45 * shimmer * uBands;
+    // crisp core of warm light
+    vec3 core = mix(bc, vec3(1.0, 0.965, 0.863), 0.55) * (0.9 + 0.25 * shimmer);
+    col = mix(col, core, line(ad, 2.6, px) * uBands);
+    return col;
   }
 
   void main() {
@@ -138,12 +154,17 @@ export const earthFragment = /* glsl */ `
       else if (band == 2) bc = uColors[2];
       else if (band == 3) bc = uColors[3];
       else if (band == 4) bc = uColors[4];
-      // Radar trail: strongest just behind the leading (start) edge, fading toward the end
-      float a = mix(0.5, 0.1, pow(clamp(progress, 0.0, 1.0), 0.7));
-      // keep city lights readable on the night side
-      a *= mix(0.75, 1.0, dayMix);
-      if (late > 0.5) a = 0.1;
+      float p = clamp(progress, 0.0, 1.0);
+      // Radar trail: solid just behind the leading (start) edge, fading toward the end
+      float a = mix(0.6, 0.2, pow(p, 0.55));
+      float sheen = exp(-p * 14.0) * 0.28;   // lit-from-within glow right behind the edge
+      if (late > 0.5) { a = 0.16; sheen = 0.0; }
       col = mix(col, bc, a * uBands);
+      // add light (not just tint) so bands glow over dark ground at night
+      col += bc * (a * 0.3 * (1.0 - dayMix) + sheen) * uBands;
+      // gentle saturation lift inside the band
+      float g = dot(col, vec3(0.299, 0.587, 0.114));
+      col = mix(col, g + (col - g) * 1.15, uBands);
     }
 
     // Hatching where the sun never sets / never rises (no normal prayer cycle)
@@ -156,24 +177,26 @@ export const earthFragment = /* glsl */ `
     if (uBands > 0.0 && abs(polar) < 0.5) {
       float px = max(length(fwidth(vPos)) * DEG, 1e-4);   // degrees of arc per pixel
       float k = max(cos(lat * RAD), 0.02);               // hour-angle degrees -> arc degrees
-      // start edges (bright, in the prayer's colour)
-      float lF = line(abs(wrap180(H + fajr)) * k, 2.2, px);
-      float lD = line(abs(wrap180(H)) * k, 2.2, px);
-      float lA = line(abs(wrap180(H - asr)) * k, 2.2, px);
-      float lM = line(abs(wrap180(H - maghrib)) * k, 2.2, px);
-      float lI = line(abs(wrap180(H - isha)) * k, 2.2, px);
-      col = mix(col, uColors[0] * 1.35 + 0.1, lF * uBands);
-      col = mix(col, uColors[1] * 1.35 + 0.1, lD * uBands);
-      col = mix(col, uColors[2] * 1.35 + 0.1, lA * uBands);
-      col = mix(col, uColors[3] * 1.35 + 0.1, lM * uBands);
-      col = mix(col, uColors[4] * 1.35 + 0.1, lI * uBands);
+      // start edges: crisp core of warm light, soft halo, slow shimmer flowing pole to pole
+      float shimmer = 0.8 + 0.2 * sin(lat * 0.12 - uTime * 1.2);
+      // signed arc distance from each start edge (positive = inside the new window)
+      float dF = wrap180(H + fajr) * k;
+      float dD = wrap180(H) * k;
+      float dA = wrap180(H - asr) * k;
+      float dM = wrap180(H - maghrib) * k;
+      float dI = wrap180(H - isha) * k;
+      col = startEdge(col, dF, uColors[0], px, shimmer);
+      col = startEdge(col, dD, uColors[1], px, shimmer);
+      col = startEdge(col, dA, uColors[2], px, shimmer);
+      col = startEdge(col, dM, uColors[3], px, shimmer);
+      col = startEdge(col, dI, uColors[4], px, shimmer);
 
-      // end-only edges (soft, dashed white): sunrise, sunset, Islamic midnight
+      // end-only edges (dashed white): sunrise, sunset, Islamic midnight
       float dash = step(0.45, fract(lat / 1.6));
-      float lR = line(abs(wrap180(H + sunrise)) * k, 1.2, px);
-      float lS = line(abs(wrap180(H - sunrise)) * k, 1.2, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
-      float lN = line(abs(wrap180(H - 180.0)) * k, 1.2, px);
-      col = mix(col, vec3(1.0), (lR + lS + lN) * dash * 0.55 * uBands);
+      float lR = line(abs(wrap180(H + sunrise)) * k, 1.4, px);
+      float lS = line(abs(wrap180(H - sunrise)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
+      float lN = line(abs(wrap180(H - 180.0)) * k, 1.4, px);
+      col = mix(col, vec3(1.0), clamp(lR + lS + lN, 0.0, 1.0) * dash * 0.6 * uBands);
     }
 
     gl_FragColor = vec4(toLinear(col), 1.0);
@@ -199,6 +222,7 @@ export const cloudFragment = /* glsl */ `
   uniform sampler2D uClouds;
   uniform vec3 uSunDir;        // world space (Earth is not rotated)
   uniform float uOpacity;
+  uniform float uBands;        // clouds thin out while prayer bands are shown
   varying vec3 vNormalW;
   varying vec3 vPosW;
   varying vec2 vUv;
@@ -244,7 +268,7 @@ export const cloudFragment = /* glsl */ `
     float limb = 1.0 - max(dot(viewDir, n), 0.0);
     color += vec3(0.08, 0.1, 0.14) * pow(limb, 2.0) * lit;
 
-    float alpha = d * uOpacity * mix(0.35, 1.0, lit);
+    float alpha = d * uOpacity * mix(0.35, 1.0, lit) * mix(1.0, 0.6, uBands);
     gl_FragColor = vec4(color, alpha);
     #include <colorspace_fragment>
   }

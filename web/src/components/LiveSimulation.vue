@@ -173,11 +173,11 @@
           reaches a certain position in the sky, and at any moment those positions form lines across the planet.
         </p>
         <ul>
-          <li><strong style="color: #7c9cff">Fajr</strong> starts when the sun is {{ params.fajrAngle }}° below the horizon before dawn and ends at sunrise.</li>
-          <li><strong style="color: #ffd166">Dhuhr</strong> starts at solar noon, the line where the sun is highest.</li>
-          <li><strong style="color: #ff9f43">Asr</strong> starts when shadows reach {{ params.asrFactor === 2 ? 'twice' : 'once' }} an object's length (plus its noon shadow) and ends at sunset.</li>
-          <li><strong style="color: #ff5d8f">Maghrib</strong> starts at sunset{{ params.maghribAngle ? ` (sun ${params.maghribAngle}° below)` : '' }}.</li>
-          <li><strong style="color: #9b6bff">Isha</strong> starts {{ params.ishaMinutes ? `${params.ishaMinutes} minutes after Maghrib` : `when the sun is ${params.ishaAngle}° below the horizon` }}; its preferred time ends at Islamic midnight (fainter after that).</li>
+          <li><strong style="color: #5b8cff">Fajr</strong> starts when the sun is {{ params.fajrAngle }}° below the horizon before dawn and ends at sunrise.</li>
+          <li><strong style="color: #ffcc33">Dhuhr</strong> starts at solar noon, the line where the sun is highest.</li>
+          <li><strong style="color: #ff8a1f">Asr</strong> starts when shadows reach {{ params.asrFactor === 2 ? 'twice' : 'once' }} an object's length (plus its noon shadow) and ends at sunset.</li>
+          <li><strong style="color: #ff3d7f">Maghrib</strong> starts at sunset{{ params.maghribAngle ? ` (sun ${params.maghribAngle}° below)` : '' }}.</li>
+          <li><strong style="color: #8f5bff">Isha</strong> starts {{ params.ishaMinutes ? `${params.ishaMinutes} minutes after Maghrib` : `when the sun is ${params.ishaAngle}° below the horizon` }}; its preferred time ends at Islamic midnight (fainter after that).</li>
         </ul>
         <p>
           As the Earth turns, every line sweeps westward around the globe once a day, so somewhere on Earth the call to

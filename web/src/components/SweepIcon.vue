@@ -13,11 +13,11 @@
     <circle cx="32" cy="32" r="26" :fill="`url(#${gradId})`" />
     <g :clip-path="`url(#${clipId})`">
       <g class="sweep">
-        <path d="M 32 -10 A 44 44 0 0 1 32 74" stroke="#7c9cff" />
-        <path d="M 32 -10 A 34 44 0 0 1 32 74" stroke="#ffd166" />
-        <path d="M 32 -10 A 22 44 0 0 1 32 74" stroke="#ff9f43" />
-        <path d="M 32 -10 A 10 44 0 0 1 32 74" stroke="#ff5d8f" />
-        <path d="M 32 -10 L 32 74" stroke="#9b6bff" />
+        <path d="M 32 -10 A 44 44 0 0 1 32 74" stroke="#5b8cff" />
+        <path d="M 32 -10 A 34 44 0 0 1 32 74" stroke="#ffcc33" />
+        <path d="M 32 -10 A 22 44 0 0 1 32 74" stroke="#ff8a1f" />
+        <path d="M 32 -10 A 10 44 0 0 1 32 74" stroke="#ff3d7f" />
+        <path d="M 32 -10 L 32 74" stroke="#8f5bff" />
       </g>
       <rect x="32" y="0" width="40" height="64" fill="rgba(3,5,11,0.45)" />
     </g>
