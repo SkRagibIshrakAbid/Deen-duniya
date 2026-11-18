@@ -68,6 +68,12 @@
                 severity="warn"
               />
               <Tag v-if="isFriday(day)" value="Jumu'ah" severity="info" />
+          <Tag
+            v-if="day.polarEstimate"
+            value="Estimated"
+            severity="secondary"
+            title="No normal sunrise/sunset this day: times estimated from the nearest latitude where the sun rises and sets"
+          />
             </div>
           </div>
 

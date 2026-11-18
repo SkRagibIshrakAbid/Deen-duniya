@@ -23,6 +23,7 @@
     <div v-if="hover && hoverInfo" class="hover-tip" :style="{ left: hover.x + 'px', top: hover.y + 'px' }">
       <div class="tip-prayer" :style="{ color: hoverInfo.color }">{{ hoverInfo.title }}</div>
       <div class="tip-sub">{{ hoverInfo.sub }}</div>
+      <div v-if="hoverInfo.note" class="tip-note">{{ hoverInfo.note }}</div>
       <div class="tip-coords">{{ formatCoords(hover.lat, hover.lon) }}</div>
     </div>
 
@@ -99,6 +100,7 @@
       </div>
       <div class="readout-prayer" :style="{ color: focusInfo.color }">{{ focusInfo.title }}</div>
       <div class="readout-sub">{{ focusInfo.sub }}</div>
+      <div v-if="focusInfo.note" class="readout-note">{{ focusInfo.note }}</div>
       <div class="readout-time">{{ focusInfo.clock }}</div>
     </section>
 
@@ -181,7 +183,9 @@
         </ul>
         <p>
           As the Earth turns, every line sweeps westward around the globe once a day, so somewhere on Earth the call to
-          prayer is always being made. Striped areas near the poles have no normal sunrise or sunset at this time of year.
+          prayer is always being made. Striped areas near the poles have no normal sunrise or sunset at this time of year. All five prayers
+          still apply there; following the Saudi Permanent Committee's ruling, their times are estimated from the
+          nearest latitude (on the same meridian) where the sun still rises and sets that day.
         </p>
         <p class="about-small">
           Bands use your calculation method from Settings. Local mosque timetables may add small adjustments.
@@ -282,18 +286,21 @@ const describe = (lat, lon) => {
   const info = prayerAt(lat, lon, new Date(simTick.value), params.value)
   const solarHour = ((12 + info.hourAngle / 15) % 24 + 24) % 24
   const solar = `${String(Math.floor(solarHour)).padStart(2, '0')}:${String(Math.floor((solarHour % 1) * 60)).padStart(2, '0')}`
-  if (info.polar === 'night') {
-    return { title: 'Polar night', sub: 'The sun does not rise here today', color: '#9fb4ff', solar, info }
-  }
+  // Polar day/night: times estimated from the nearest latitude with a sunrise and sunset
+  const sky = info.polar === 'day' ? 'Midnight sun' : info.polar === 'night' ? 'Polar night' : 'Sun barely rises'
+  const from = info.estimated
+    ? `${Math.abs(info.estimatedFrom).toFixed(1)}°${info.estimatedFrom >= 0 ? 'N' : 'S'}`
+    : ''
+  const note = info.estimated ? `${sky} · times estimated from ${from}` : null
   if (!info.prayer) {
     const sub = info.next === 'Dhuhr'
       ? `After sunrise · Dhuhr in ${fmtDur(info.endsAt - simTick.value)}`
       : `Maghrib in ${fmtDur(info.endsAt - simTick.value)}`
-    return { title: info.polar === 'day' ? 'Midnight sun' : 'Between prayers', sub, color: '#e5e7eb', solar, info }
+    return { title: 'Between prayers', sub, note, color: '#e5e7eb', solar, info }
   }
   const title = info.late ? 'Isha (after midnight)' : `${info.prayer} time`
-  const sub = info.endsAt ? `Ends in ${fmtDur(info.endsAt - simTick.value)}` : 'Sun stays up all day'
-  return { title, sub, color: PRAYERS[info.prayer].color, solar, info }
+  const sub = `Ends in ${fmtDur(info.endsAt - simTick.value)}`
+  return { title, sub, note, color: PRAYERS[info.prayer].color, solar, info }
 }
 
 const userInfo = computed(() => (userPoint.value ? describe(userPoint.value.lat, userPoint.value.lon).info : null))
@@ -641,6 +648,14 @@ watch(userPoint, () => {
 .guide-btn-wrap {
   display: inline-flex;
   border-radius: 999px;
+}
+
+.readout-note,
+.tip-note {
+  font-size: 0.72rem;
+  opacity: 0.7;
+  margin-top: 0.2rem;
+  font-style: italic;
 }
 
 .title {

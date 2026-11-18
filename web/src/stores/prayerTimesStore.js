@@ -15,7 +15,8 @@ import { getPrayerTimes, getMonthlyCalendar } from '../services/aladhanApi'
 import { useLocationStore } from './locationStore'
 import { useSettingsStore } from './settingsStore'
 import { useNow } from '../composables/useNow'
-import { instantAt, todayInTz, browserTimezone, formatDuration } from '../utils/dateUtils'
+import { instantAt, todayInTz, browserTimezone, formatDuration, cleanTime } from '../utils/dateUtils'
+import { estimatedTimings, polarStateFor, resolveParams } from '../simulation/solar'
 
 const STORAGE_KEY = 'deen-duniya-prayer-times'
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
@@ -30,6 +31,10 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
   const isLoading = ref(false)
   const error = ref(null)
   const lastUpdated = ref(null)
+  // Set when the location has no real sunrise/sunset today: { polar, estimatedFrom }
+  const polarEstimate = ref(null)
+  // Calendar-day offset per timing name (estimated polar times can fall after local midnight)
+  const timingOffsets = ref(null)
 
   // Monthly calendar has its own loading/error state so it never disturbs today's card
   const monthlyTimings = ref([])
@@ -52,8 +57,10 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
   const instant = (name, dayOffset = 0) => {
     if (!todayTimings.value?.[name] || !dateInfo.value?.gregorian?.date) return null
     let offset = dayOffset
-    // "Midnight" (e.g. 00:04) belongs to the night after today's Isha
-    if (name === 'Midnight') {
+    if (timingOffsets.value && name in timingOffsets.value) {
+      offset += timingOffsets.value[name]
+    } else if (name === 'Midnight') {
+      // "Midnight" (e.g. 00:04) belongs to the night after today's Isha
       const hour = parseInt(todayTimings.value.Midnight)
       if (hour < 12) offset += 1
     }
@@ -159,6 +166,28 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
 
   // ---------- actions ----------
 
+  /**
+   * Polar day/night: AlAdhan returns degenerate times (e.g. Fajr = Sunrise = Sunset = Isha).
+   * Replace them with times estimated from the nearest latitude where the sun rises and sets
+   * (Saudi Permanent Committee ruling), using the user's method and Asr school.
+   * Returns { timings, polarEstimate, offsets } (polarEstimate/offsets null when not needed).
+   */
+  const withPolarEstimate = (timings, dateDMY, tz) => {
+    const locationStore = useLocationStore()
+    const settingsStore = useSettingsStore()
+    const lat = Number(locationStore.latitude)
+    const lon = Number(locationStore.longitude)
+    const state = polarStateFor(lat, lon, dateDMY)
+    const degenerate = timings?.Sunrise && cleanTime(timings.Sunrise) === cleanTime(timings.Sunset)
+    if (!state.estimated && !degenerate) return { timings, polarEstimate: null, offsets: null }
+    const est = estimatedTimings(lat, lon, dateDMY, tz, resolveParams(settingsStore.calculationMethod, settingsStore.asrCalculation))
+    return {
+      timings: { ...timings, ...est.timings },
+      polarEstimate: { polar: est.polar, estimatedFrom: est.estimatedFrom ?? lat },
+      offsets: est.offsets
+    }
+  }
+
   const settingsSignature = () => {
     const locationStore = useLocationStore()
     const settingsStore = useSettingsStore()
@@ -195,7 +224,10 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
       )
 
       const apiTz = data.meta?.timezone || tz
-      todayTimings.value = data.timings
+      const fixed = withPolarEstimate(data.timings, data.date.gregorian.date, apiTz)
+      todayTimings.value = fixed.timings
+      polarEstimate.value = fixed.polarEstimate
+      timingOffsets.value = fixed.offsets
       dateInfo.value = data.date
       timezone.value = apiTz
       lastUpdated.value = dayjs()
@@ -230,7 +262,7 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     calendarError.value = null
 
     try {
-      monthlyTimings.value = await getMonthlyCalendar(
+      const days = await getMonthlyCalendar(
         year,
         month,
         locationStore.latitude,
@@ -239,6 +271,11 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
         settingsStore.asrCalculation,
         settingsStore.hijriAdjustment
       )
+      monthlyTimings.value = days.map((day) => {
+        const tz = day.meta?.timezone || effectiveTimezone.value
+        const fixed = withPolarEstimate(day.timings, day.date.gregorian.date, tz)
+        return fixed.polarEstimate ? { ...day, timings: fixed.timings, polarEstimate: fixed.polarEstimate } : day
+      })
     } catch (err) {
       calendarError.value = err.message || 'Failed to load calendar'
       monthlyTimings.value = []
@@ -253,6 +290,8 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
       todayTimings: todayTimings.value,
       dateInfo: dateInfo.value,
       timezone: timezone.value,
+      polarEstimate: polarEstimate.value,
+      timingOffsets: timingOffsets.value,
       lastUpdated: lastUpdated.value?.toISOString(),
       signature: settingsSignature()
     }
@@ -284,6 +323,8 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
       todayTimings.value = cached.todayTimings
       dateInfo.value = cached.dateInfo
       timezone.value = cached.timezone || null
+      polarEstimate.value = cached.polarEstimate || null
+      timingOffsets.value = cached.timingOffsets || null
       lastUpdated.value = cached.lastUpdated ? dayjs(cached.lastUpdated) : null
 
       const tz = cached.timezone || locationStore.timezone || browserTimezone()
@@ -298,6 +339,8 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     todayTimings.value = null
     dateInfo.value = null
     timezone.value = null
+    polarEstimate.value = null
+    timingOffsets.value = null
     monthlyTimings.value = []
   }
 
@@ -314,6 +357,7 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     calendarLoading,
     calendarError,
     lastUpdated,
+    polarEstimate,
     prayerNames,
 
     // Computed

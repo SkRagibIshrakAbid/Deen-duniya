@@ -20,6 +20,15 @@
       <div v-else-if="todayTimings" class="prayer-times">
         <Message v-if="error" severity="warn" :closable="false" class="inline-warning">{{ error }}</Message>
 
+        <div
+          v-if="polarEstimate"
+          class="polar-badge"
+          title="The sun does not rise or set normally here today. All five prayers still apply; following the Saudi Permanent Committee's ruling, times are estimated from the nearest latitude where the sun rises and sets."
+        >
+          <i class="pi pi-compass"></i>
+          <span>{{ polarLabel }} · times estimated from {{ polarFrom }}</span>
+        </div>
+
         <!-- Current & Next Prayer Countdown -->
         <div v-if="nextPrayer" class="next-prayer-banner">
           <div class="current-prayer-section">
@@ -143,6 +152,15 @@ const nextPrayer = computed(() => prayerTimesStore.nextPrayer)
 const currentPrayer = computed(() => prayerTimesStore.currentPrayer)
 const prayerNames = computed(() => prayerTimesStore.prayerNames)
 const lastUpdated = computed(() => prayerTimesStore.lastUpdated)
+const polarEstimate = computed(() => prayerTimesStore.polarEstimate)
+const polarLabel = computed(() => {
+  const p = polarEstimate.value?.polar
+  return p === 'day' ? 'Midnight sun' : p === 'night' ? 'Polar night' : 'Polar region'
+})
+const polarFrom = computed(() => {
+  const lat = polarEstimate.value?.estimatedFrom ?? 0
+  return `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`
+})
 const timeFormat = computed(() => settingsStore.timeFormat)
 
 const countdown = computed(() => {
@@ -200,6 +218,19 @@ const getPrayerIcon = (prayerName) => {
   gap: 0.75rem;
   color: var(--primary-color);
   font-size: 1.5rem;
+}
+
+.polar-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  border-radius: 0.6rem;
+  font-size: 0.85rem;
+  background: color-mix(in srgb, var(--p-primary-color) 12%, transparent);
+  color: var(--p-text-color);
+  cursor: help;
 }
 
 .inline-warning {

@@ -96,20 +96,51 @@ const hourAngleFor = (altitude, lat, dec) => {
   return { h: Math.acos(c) * DEG, state: 'ok' }
 }
 
+/** Margin (deg) inside the threshold latitude, so sunrise/sunset stay well defined */
+export const POLAR_MARGIN = 0.25
+
+/**
+ * Where the sun does not rise or does not set, prayer times are estimated from
+ * the nearest latitude (same meridian) where it still rises and sets that day.
+ * Ruling: Saudi Permanent Committee (Fatwa 2769) - estimate by the nearest place
+ * where the prayer times are distinguishable.
+ *
+ * Exact limits: midnight altitude = |lat + dec| - 90, noon altitude = 90 - |lat - dec|.
+ *   midnight sun (lat and dec on the same side): |lat| > 90 - |dec| - 0.833
+ *   polar night  (opposite sides):               |lat| > 90 - |dec| + 0.833
+ * Times are estimated a little before those limits so every prayer stays defined:
+ *   summer side: sunset must exist             -> |lat| <= 90 - |dec| - 0.833 - 0.25
+ *   winter side: Asr needs a shadow, i.e. the sun's centre above the horizon at noon
+ *                                              -> |lat| <= 90 - |dec| - 0.5
+ * Returns { latE, estimated, polar: 'day' | 'night' | null } (polar = the real sky state).
+ */
+export const NOON_MIN_ALTITUDE = 0.5
+
+export const polarLimits = (dec) => {
+  const a = Math.abs(dec)
+  return {
+    summer: { thr: 90 - a + SUNRISE_ALTITUDE, limit: 90 - a + SUNRISE_ALTITUDE - POLAR_MARGIN },
+    winter: { thr: 90 - a - SUNRISE_ALTITUDE, limit: 90 - a - NOON_MIN_ALTITUDE }
+  }
+}
+
+export const polarLatitude = (lat, dec) => {
+  const sameSide = lat * dec > 0
+  const { thr, limit } = polarLimits(dec)[sameSide ? 'summer' : 'winter']
+  if (Math.abs(lat) <= limit) return { latE: lat, estimated: false, polar: null }
+  const polar = Math.abs(lat) >= thr ? (sameSide ? 'day' : 'night') : null
+  return { latE: Math.sign(lat || 1) * limit, estimated: true, polar }
+}
+
 /**
  * Event hour angles for a latitude. All values in degrees.
  * Mirrors `eventAngles()` in globeShader.js — keep them in sync.
+ * In polar day/night the angles are those of the nearest latitude with a sunrise and sunset.
  */
-export const eventAngles = (lat, dec, p) => {
+export const eventAngles = (latIn, dec, p) => {
+  const { latE: lat, polar, estimated } = polarLatitude(latIn, dec)
   const rise = hourAngleFor(SUNRISE_ALTITUDE, lat, dec)
-  if (rise.state === 'below') return { polar: 'night' }
-  if (rise.state === 'above') {
-    const asrAlt = Math.atan(1 / (p.asrFactor + Math.tan(Math.abs(lat - dec) * RAD))) * DEG
-    const asr = hourAngleFor(asrAlt, lat, dec)
-    return { polar: 'day', asr: asr.state === 'ok' ? asr.h : (asr.state === 'below' ? 180 : 0) }
-  }
-
-  const sunrise = rise.h
+  const sunrise = rise.state === 'ok' ? rise.h : (rise.state === 'above' ? 180 : 0)
   const night = 360 - 2 * sunrise // night length in degrees of hour angle
 
   // Asr: shadow length = factor + noon shadow
@@ -137,7 +168,9 @@ export const eventAngles = (lat, dec, p) => {
   }
 
   return {
-    polar: null,
+    polar,
+    estimated,
+    estimatedFrom: estimated ? lat : null,
     fajr: Math.min(fajr, 180),
     sunrise,
     asr,
@@ -166,24 +199,72 @@ export const prayerAt = (lat, lon, date, params) => {
   const e = eventAngles(lat, declination, params)
   const at = (targetH) => new Date(date.getTime() + ((targetH - H) / 15) * 3600000)
 
-  if (e.polar === 'night') return { prayer: null, polar: 'night', hourAngle: H, startsAt: null, endsAt: null }
-  if (e.polar === 'day') {
-    if (H >= 0 && H < e.asr) return { prayer: 'Dhuhr', polar: 'day', hourAngle: H, startsAt: at(0), endsAt: at(e.asr) }
-    if (H >= e.asr) return { prayer: 'Asr', polar: 'day', hourAngle: H, startsAt: at(e.asr), endsAt: null }
-    return { prayer: null, polar: 'day', hourAngle: H, startsAt: null, endsAt: at(0) }
-  }
-
-  const win = (prayer, start, end, extra = {}) => ({ prayer, hourAngle: H, startsAt: at(start), endsAt: at(end), ...extra })
+  const base = { hourAngle: H, polar: e.polar, estimated: e.estimated, estimatedFrom: e.estimatedFrom }
+  const win = (prayer, start, end, extra = {}) => ({ ...base, prayer, startsAt: at(start), endsAt: at(end), ...extra })
+  const gap = (end, next) => ({ ...base, prayer: null, startsAt: null, endsAt: at(end), next })
 
   if (H >= -e.fajr && H < -e.sunrise) return win('Fajr', -e.fajr, -e.sunrise)
-  if (H >= -e.sunrise && H < 0) return { prayer: null, hourAngle: H, startsAt: null, endsAt: at(0), next: 'Dhuhr' }
+  if (H >= -e.sunrise && H < 0) return gap(0, 'Dhuhr')
   if (H >= 0 && H < e.asr) return win('Dhuhr', 0, e.asr)
   if (H >= e.asr && H < e.sunset) return win('Asr', e.asr, e.sunset)
-  if (H >= e.sunset && H < e.maghrib) return { prayer: null, hourAngle: H, startsAt: null, endsAt: at(e.maghrib), next: 'Maghrib' }
+  if (H >= e.sunset && H < e.maghrib) return gap(e.maghrib, 'Maghrib')
   if (H >= e.maghrib && H < e.isha) return win('Maghrib', e.maghrib, e.isha)
   if (H >= e.isha) return win('Isha', e.isha, 180)
   // After Islamic midnight until Fajr: Isha still valid (late)
   return win('Isha', e.isha - 360, -e.fajr, { late: true })
+}
+
+const hhmm = (d, tz) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d)
+
+/**
+ * Prayer timings for a local calendar date, computed with the rules above
+ * (used where AlAdhan has no real sunrise/sunset: polar day and polar night).
+ * dateDMY: 'DD-MM-YYYY'. Returns { timings: { Fajr: 'HH:mm', ... }, polar, estimatedFrom }.
+ */
+export const estimatedTimings = (lat, lon, dateDMY, tz, params) => {
+  const [dd, mm, yyyy] = dateDMY.split('-').map(Number)
+  // Approximate local noon (UTC) from longitude, then refine on the sun's actual hour angle there
+  let noon = new Date(Date.UTC(yyyy, mm - 1, dd, 12) - (lon / 15) * 3600000)
+  for (let i = 0; i < 2; i++) {
+    const { subsolarLon } = sunPosition(noon)
+    noon = new Date(noon.getTime() - (wrap180(lon - subsolarLon) / 15) * 3600000)
+  }
+  const { declination } = sunPosition(noon)
+  const e = eventAngles(lat, declination, params)
+  const at = (h) => new Date(noon.getTime() + (h / 15) * 3600000)
+  const angles = {
+    Fajr: -e.fajr,
+    Sunrise: -e.sunrise,
+    Dhuhr: 0,
+    Asr: e.asr,
+    Sunset: e.sunset,
+    Maghrib: e.maghrib,
+    Isha: e.isha,
+    Imsak: -e.fajr - 2.5, // 10 minutes before Fajr, like AlAdhan
+    Midnight: 180,
+    Firstthird: e.sunset + (360 - 2 * e.sunset) / 3,
+    Lastthird: e.sunset + (2 * (360 - 2 * e.sunset)) / 3
+  }
+  // With very short nights, Maghrib/Isha can fall after local midnight: record the calendar-day offset
+  const ymd = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+  const target = Date.UTC(yyyy, mm - 1, dd)
+  const timings = {}
+  const offsets = {}
+  for (const [name, h] of Object.entries(angles)) {
+    const d = at(h)
+    timings[name] = hhmm(d, tz)
+    const [y2, m2, d2] = ymd(d).split('-').map(Number)
+    offsets[name] = Math.round((Date.UTC(y2, m2 - 1, d2) - target) / 86400000)
+  }
+  return { polar: e.polar, estimated: e.estimated, estimatedFrom: e.estimatedFrom, timings, offsets }
+}
+
+/** Polar estimate state for a location on a local date */
+export const polarStateFor = (lat, lon, dateDMY) => {
+  const [dd, mm, yyyy] = dateDMY.split('-').map(Number)
+  const { declination } = sunPosition(new Date(Date.UTC(yyyy, mm - 1, dd, 12) - (lon / 15) * 3600000))
+  return polarLatitude(lat, declination)
 }
 
 /** Convert a lat/lon (deg) to a unit vector in the globe's object space (three.js SphereGeometry UVs) */

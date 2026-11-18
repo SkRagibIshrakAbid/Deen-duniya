@@ -87,9 +87,18 @@ export const earthFragment = /* glsl */ `
     base += vec3(0.35, 0.15, 0.05) * exp(-pow((sunDot + 0.02) / 0.06, 2.0)) * 0.35;
 
     // ---------- prayer windows ----------
+    // Polar day/night: estimate from the nearest latitude where the sun rises and sets
+    // (mirrors polarLatitude() in solar.js)
+    float latTrue = lat;
+    bool sameSide = latTrue * uDec > 0.0;
+    float aDec = abs(uDec);
+    float thr = sameSide ? 90.0 - aDec - 0.833 : 90.0 - aDec + 0.833;
+    float limit = sameSide ? thr - 0.25 : 90.0 - aDec - 0.5;
+    float estimated = abs(latTrue) > limit ? 1.0 : 0.0;
+    if (estimated > 0.5) lat = sign(latTrue) * limit;
+
     float st;
     float sunrise = hourAngleFor(-0.833, lat, uDec, st);
-    float polar = st; // 1 = polar night, -1 = midnight sun
 
     float noonShadow = tan(abs(lat - uDec) * RAD);
     float asrAlt = atan(1.0 / (uAsrFactor + noonShadow)) * DEG;
@@ -127,12 +136,7 @@ export const earthFragment = /* glsl */ `
     float progress = 0.0;   // 0 at start edge, 1 at end edge
     float late = 0.0;
 
-    if (polar > 0.5) {
-      band = -1;
-    } else if (polar < -0.5) {
-      if (H >= 0.0 && H < asr) { band = 1; progress = H / max(asr, 0.001); }
-      else if (H >= asr) { band = 2; progress = (H - asr) / max(180.0 - asr, 0.001); }
-    } else if (H >= -fajr && H < -sunrise) {
+    if (H >= -fajr && H < -sunrise) {
       band = 0; progress = (H + fajr) / max(fajr - sunrise, 0.001);
     } else if (H >= 0.0 && H < asr) {
       band = 1; progress = H / max(asr, 0.001);
@@ -167,18 +171,18 @@ export const earthFragment = /* glsl */ `
       col = mix(col, g + (col - g) * 1.15, uBands);
     }
 
-    // Hatching where the sun never sets / never rises (no normal prayer cycle)
-    if (abs(polar) > 0.5 && uBands > 0.0) {
+    // Light hatching where times are estimated (sun never sets / never rises, or barely clears the horizon)
+    if (estimated > 0.5 && uBands > 0.0) {
       float stripe = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 14.0));
-      col = mix(col, polar > 0.5 ? vec3(0.45, 0.5, 0.9) : vec3(1.0, 0.9, 0.5), stripe * 0.18 * uBands);
+      col = mix(col, sameSide ? vec3(1.0, 0.9, 0.5) : vec3(0.45, 0.5, 0.9), stripe * 0.12 * uBands);
     }
 
     // ---------- boundary lines ----------
-    if (uBands > 0.0 && abs(polar) < 0.5) {
+    if (uBands > 0.0) {
       float px = max(length(fwidth(vPos)) * DEG, 1e-4);   // degrees of arc per pixel
-      float k = max(cos(lat * RAD), 0.02);               // hour-angle degrees -> arc degrees
+      float k = max(cos(latTrue * RAD), 0.02);               // hour-angle degrees -> arc degrees
       // start edges: crisp core of warm light, soft halo, slow shimmer flowing pole to pole
-      float shimmer = 0.8 + 0.2 * sin(lat * 0.12 - uTime * 1.2);
+      float shimmer = 0.8 + 0.2 * sin(latTrue * 0.12 - uTime * 1.2);
       // signed arc distance from each start edge (positive = inside the new window)
       float dF = wrap180(H + fajr) * k;
       float dD = wrap180(H) * k;
@@ -192,7 +196,7 @@ export const earthFragment = /* glsl */ `
       col = startEdge(col, dI, uColors[4], px, shimmer);
 
       // end-only edges (dashed white): sunrise, sunset, Islamic midnight
-      float dash = step(0.45, fract(lat / 1.6));
+      float dash = step(0.45, fract(latTrue / 1.6));
       float lR = line(abs(wrap180(H + sunrise)) * k, 1.4, px);
       float lS = line(abs(wrap180(H - sunrise)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
       float lN = line(abs(wrap180(H - 180.0)) * k, 1.4, px);
