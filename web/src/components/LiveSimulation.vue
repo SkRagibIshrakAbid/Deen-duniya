@@ -423,8 +423,11 @@ const placeLabel = (el, lat, lon) => {
 
 const onFrame = () => {
   const now = performance.now()
-  const dt = Math.min(0.25, (now - lastFrame) / 1000)
+  const elapsed = (now - lastFrame) / 1000
   lastFrame = now
+  // real time keeps true elapsed time (so a background tab or slow load doesn't fall behind);
+  // time-lapse caps the step so a stall doesn't jump hours
+  const dt = speed.value === 1 ? elapsed : Math.min(0.25, elapsed)
 
   if (playing.value) {
     simMs += dt * 1000 * speed.value
