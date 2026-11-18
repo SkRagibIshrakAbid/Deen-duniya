@@ -83,7 +83,7 @@
           <label><ToggleSwitch v-model="layers.bands" /> Prayer bands</label>
           <label><ToggleSwitch v-model="layers.lights" /> City lights</label>
           <label><ToggleSwitch v-model="layers.clouds" /> Clouds</label>
-          <label><ToggleSwitch v-model="followSun" /> Follow the sun</label>
+          <label title="Keeps the sun and prayer bands still on screen while the Earth turns beneath (most visible at faster speeds)"><ToggleSwitch v-model="followSun" /> Lock view to sun</label>
         </div>
       </template>
     </aside>
