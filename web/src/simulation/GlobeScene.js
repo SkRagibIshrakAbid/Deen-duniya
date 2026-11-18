@@ -11,8 +11,12 @@ import {
   earthFragment,
   cloudFragment,
   atmosphereVertex,
-  atmosphereFragment
+  atmosphereFragment,
+  cloudVertex
 } from './globeShader'
+
+const Y_AXIS = new THREE.Vector3(0, 1, 0)
+const DEG2RAD = Math.PI / 180
 
 const TEXTURES = {
   day: '/textures/earth_day.jpg',
@@ -140,13 +144,13 @@ export class GlobeScene {
     this.cloudUniforms = {
       uClouds: { value: blank },
       uSunDir: this.earthUniforms.uSunDir,
-      uOpacity: { value: 0.35 }
+      uOpacity: { value: 0.55 }
     }
     this.clouds = new THREE.Mesh(
-      new THREE.SphereGeometry(1.008, 96, 72),
+      new THREE.SphereGeometry(1.008, 128, 96),
       new THREE.ShaderMaterial({
         uniforms: this.cloudUniforms,
-        vertexShader: earthVertex,
+        vertexShader: cloudVertex,
         fragmentShader: cloudFragment,
         transparent: true,
         depthWrite: false
@@ -173,13 +177,19 @@ export class GlobeScene {
   loadTextures(onReady) {
     const loader = new THREE.TextureLoader()
     const maxAniso = this.renderer.capabilities.getMaxAnisotropy()
-    const load = (url, srgb) =>
+    const load = (url, srgb, smooth = false) =>
       new Promise((resolve) => {
         loader.load(
           url,
           (tex) => {
             if (srgb) tex.colorSpace = THREE.SRGBColorSpace
-            tex.anisotropy = Math.min(8, maxAniso)
+            tex.anisotropy = smooth ? maxAniso : Math.min(8, maxAniso)
+            if (smooth) {
+              tex.generateMipmaps = true
+              tex.minFilter = THREE.LinearMipmapLinearFilter
+              tex.magFilter = THREE.LinearFilter
+              tex.wrapS = THREE.RepeatWrapping // no seam at ±180°
+            }
             resolve(tex)
           },
           undefined,
@@ -187,7 +197,7 @@ export class GlobeScene {
         )
       })
 
-    Promise.all([load(TEXTURES.day, true), load(TEXTURES.night, true), load(TEXTURES.clouds, false)]).then(
+    Promise.all([load(TEXTURES.day, true), load(TEXTURES.night, true), load(TEXTURES.clouds, false, true)]).then(
       ([day, night, clouds]) => {
         if (this.disposed) return
         if (day) this.earthUniforms.uDay.value = day
@@ -226,6 +236,12 @@ export class GlobeScene {
 
   setFollowSun(on) {
     this.followSun = on
+    this.resetFollow()
+  }
+
+  /** Forget the last sun longitude so the next frame does not rotate (call after time jumps) */
+  resetFollow() {
+    this.followPrevLon = null
   }
 
   /** Smoothly turn the camera to look at a lat/lon */
@@ -343,11 +359,17 @@ export class GlobeScene {
       const r = this.flight.from.length() + (this.flight.to.length() - this.flight.from.length()) * e
       this.camera.position.copy(this.flight.from.clone().normalize().lerp(this.flight.to.clone().normalize(), e).normalize().multiplyScalar(r))
       if (t >= 1) this.flight = null
+      this.followPrevLon = null
     } else if (this.followSun && this.subsolar) {
-      // keep the camera over the afternoon side so the terminator stays put and Earth turns beneath
-      const target = new THREE.Vector3(...latLonToVector(this.subsolar.lat * 0.5 + 15, this.subsolar.lon + 60))
-      const r = this.camera.position.length()
-      this.camera.position.lerp(target.multiplyScalar(r), Math.min(1, dt * 1.5))
+      // Rotate the camera about the polar axis by exactly as much as the sun moved,
+      // so the terminator stays fixed on screen while the Earth turns beneath.
+      // A pure rotation never changes the camera distance and composes with user orbiting.
+      if (this.followPrevLon != null) {
+        let d = this.subsolar.lon - this.followPrevLon
+        d = ((d + 540) % 360) - 180
+        if (Math.abs(d) < 30) this.camera.position.applyAxisAngle(Y_AXIS, d * DEG2RAD)
+      }
+      this.followPrevLon = this.subsolar.lon
     }
 
     this.controls.update()

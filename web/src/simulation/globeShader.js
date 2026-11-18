@@ -64,11 +64,11 @@ export const earthFragment = /* glsl */ `
     float sunDot = dot(n, normalize(uSunDir));
     vec3 day = texture2D(uDay, vUv).rgb;
     vec3 night = texture2D(uNight, vUv).rgb;
-    float dayMix = smoothstep(-0.08, 0.18, sunDot);
+    float dayMix = smoothstep(-0.1, 0.02, sunDot);  // night (and city lights) only after the sun sets
     vec3 nightColor = day * 0.06 + night * vec3(1.0, 0.85, 0.6) * 1.6 * uLights;
-    vec3 base = mix(nightColor, day * (0.35 + 0.75 * max(sunDot, 0.0)), dayMix);
+    vec3 base = mix(nightColor, day * (0.45 + 0.6 * sqrt(max(sunDot, 0.0))), dayMix);
     // warm twilight tint along the terminator
-    base += vec3(0.35, 0.15, 0.05) * exp(-pow(sunDot / 0.08, 2.0)) * 0.35;
+    base += vec3(0.35, 0.15, 0.05) * exp(-pow((sunDot + 0.02) / 0.06, 2.0)) * 0.35;
 
     // ---------- prayer windows ----------
     float st;
@@ -181,18 +181,71 @@ export const earthFragment = /* glsl */ `
   }
 `
 
+export const cloudVertex = /* glsl */ `
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    vNormalW = normalize(mat3(modelMatrix) * normal);
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vPosW = wp.xyz;
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`
+
 export const cloudFragment = /* glsl */ `
   precision highp float;
   uniform sampler2D uClouds;
-  uniform vec3 uSunDir;
+  uniform vec3 uSunDir;        // world space (Earth is not rotated)
   uniform float uOpacity;
-  varying vec3 vPos;
+  varying vec3 vNormalW;
+  varying vec3 vPosW;
   varying vec2 vUv;
+
+  // Cloud density lives in the alpha channel of the (palette) PNG
+  float density(vec2 uv) { return texture2D(uClouds, uv).a; }
+
+  // Smooth B-spline-style filter from 4 bilinear taps: softens the upscaled 1024px map
+  float smoothDensity(vec2 uv) {
+    vec2 texSize = vec2(1024.0, 512.0);
+    vec2 st = uv * texSize - 0.5;
+    vec2 i = floor(st);
+    vec2 f = st - i;
+    vec2 f2 = f * f, f3 = f2 * f;
+    vec2 w0 = (1.0 - 3.0 * f + 3.0 * f2 - f3) / 6.0;
+    vec2 w1 = (4.0 - 6.0 * f2 + 3.0 * f3) / 6.0;
+    vec2 w2 = (1.0 + 3.0 * f + 3.0 * f2 - 3.0 * f3) / 6.0;
+    vec2 w3 = f3 / 6.0;
+    vec2 g0 = w0 + w1, g1 = w2 + w3;
+    vec2 h0 = (w1 / g0) - 1.0 + i + 0.5;
+    vec2 h1 = (w3 / g1) + 1.0 + i + 0.5;
+    h0 /= texSize; h1 /= texSize;
+    float a = density(vec2(h0.x, h0.y)) * g0.x + density(vec2(h1.x, h0.y)) * g1.x;
+    float b = density(vec2(h0.x, h1.y)) * g0.x + density(vec2(h1.x, h1.y)) * g1.x;
+    return a * g0.y + b * g1.y;
+  }
+
   void main() {
-    float c = texture2D(uClouds, vUv).r;
-    float lit = smoothstep(-0.1, 0.25, dot(normalize(vPos), normalize(uSunDir)));
-    vec3 color = mix(vec3(0.05, 0.06, 0.09), vec3(1.0), lit);
-    gl_FragColor = vec4(color, c * uOpacity * (0.25 + 0.75 * lit));
+    float d = smoothstep(0.08, 0.85, smoothDensity(vUv));
+    vec3 n = normalize(vNormalW);
+    float ndl = dot(n, normalize(uSunDir));
+    float lit = smoothstep(-0.1, 0.08, ndl);
+
+    // Lambert-ish shading, warm along the terminator, dim blue-grey at night
+    vec3 dayCol = vec3(1.0) * (0.55 + 0.45 * max(ndl, 0.0));
+    vec3 dusk = vec3(1.0, 0.72, 0.5);
+    dayCol = mix(dayCol, dusk, exp(-pow(ndl / 0.12, 2.0)) * 0.6);
+    vec3 nightCol = vec3(0.07, 0.08, 0.11);
+    vec3 color = mix(nightCol, dayCol, lit);
+
+    // a touch brighter toward the limb so clouds sit above the surface
+    vec3 viewDir = normalize(cameraPosition - vPosW);
+    float limb = 1.0 - max(dot(viewDir, n), 0.0);
+    color += vec3(0.08, 0.1, 0.14) * pow(limb, 2.0) * lit;
+
+    float alpha = d * uOpacity * mix(0.35, 1.0, lit);
+    gl_FragColor = vec4(color, alpha);
     #include <colorspace_fragment>
   }
 `

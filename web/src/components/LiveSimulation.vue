@@ -7,6 +7,7 @@
       @pointermove="onPointerMove"
       @pointerleave="hover = null"
       @pointerdown="onPointerDown"
+      @wheel.passive="hover = null"
       @pointerup="onPointerUp"
     ></div>
 
@@ -44,11 +45,23 @@
         <span class="title-main">Prayer Times · Live</span>
         <span class="title-sub">{{ methodName }} · {{ asrName }} Asr</span>
       </div>
-      <Button icon="pi pi-info-circle" text rounded class="glass-btn" aria-label="About this view" @click="showAbout = true" />
+      <div class="top-actions">
+        <span ref="guideBtnEl" class="guide-btn-wrap">
+          <Button
+            icon="pi pi-question-circle"
+            label="Guide"
+            text
+            class="glass-btn guide-btn"
+            aria-label="Show the guide"
+            @click="openGuide"
+          />
+        </span>
+        <Button icon="pi pi-info-circle" text rounded class="glass-btn" aria-label="About this view" @click="showAbout = true" />
+      </div>
     </header>
 
     <!-- Legend -->
-    <aside class="legend glass" :class="{ collapsed: legendCollapsed }">
+    <aside ref="legendEl" class="legend glass" :class="{ collapsed: legendCollapsed }">
       <button type="button" class="legend-toggle" @click="legendCollapsed = !legendCollapsed">
         <span>Legend</span>
         <i :class="legendCollapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'"></i>
@@ -76,7 +89,7 @@
     </aside>
 
     <!-- Readout -->
-    <section v-if="focusInfo" class="readout glass">
+    <section v-if="focusInfo" ref="readoutEl" class="readout glass">
       <div class="readout-place">
         <i :class="focus.kind === 'user' ? 'pi pi-map-marker' : 'pi pi-compass'"></i>
         {{ focus.name }}
@@ -90,7 +103,7 @@
     </section>
 
     <!-- Time dock -->
-    <footer class="time-dock glass">
+    <footer ref="dockEl" class="time-dock glass">
       <div class="dock-row">
         <Button
           :icon="playing ? 'pi pi-pause' : 'pi pi-play'"
@@ -130,7 +143,7 @@
       </div>
 
       <div class="dock-row controls-row">
-        <div class="speeds" role="group" aria-label="Playback speed">
+        <div ref="speedsEl" class="speeds" role="group" aria-label="Playback speed">
           <button
             v-for="s in SPEEDS"
             :key="s.value"
@@ -148,6 +161,9 @@
         </label>
       </div>
     </footer>
+
+    <!-- First-time guide -->
+    <SimGuide v-model:visible="showGuide" :steps="guideSteps" @step="onGuideStep" @done="onGuideDone" />
 
     <!-- About -->
     <Dialog v-model:visible="showAbout" modal header="What am I looking at?" :style="{ width: '34rem' }" :breakpoints="{ '640px': '94vw' }">
@@ -189,6 +205,7 @@ import dayjs from 'dayjs'
 import Button from 'primevue/button'
 import Dialog from 'primevue/dialog'
 import ToggleSwitch from 'primevue/toggleswitch'
+import SimGuide from './SimGuide.vue'
 
 const emit = defineEmits(['close'])
 
@@ -200,7 +217,6 @@ const SPEEDS = [
   { value: 1200, label: '20 min/s', title: 'Twenty minutes per second' },
   { value: 3600, label: '1 h/s', title: 'One hour per second' }
 ]
-const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 const locationStore = useLocationStore()
 const settingsStore = useSettingsStore()
@@ -219,7 +235,7 @@ const layers = reactive({ bands: true, lights: true, clouds: true })
 const followSun = ref(false)
 
 const playing = ref(true)
-const speed = ref(reducedMotion ? 1 : 1200)
+const speed = ref(1) // opens live (real time)
 let simMs = Date.now()
 const simTick = ref(simMs) // reactive copy, refreshed ~8x per second
 
@@ -317,6 +333,7 @@ const setSpeed = (s) => {
 }
 
 const goLive = () => {
+  scene?.resetFollow()
   simMs = Date.now()
   simTick.value = simMs
   speed.value = 1
@@ -325,6 +342,7 @@ const goLive = () => {
 }
 
 const setSimTime = (ms) => {
+  scene?.resetFollow()
   simMs = ms
   simTick.value = ms
   scene?.setTime(new Date(ms))
@@ -352,7 +370,7 @@ const onDateChange = (e) => {
 const close = () => emit('close')
 
 const onKey = (e) => {
-  if (e.target instanceof HTMLInputElement) return
+  if (showGuide.value || e.target instanceof HTMLInputElement) return
   if (e.key === 'Escape' && !showAbout.value) close()
   if (e.key === ' ') {
     e.preventDefault()
@@ -377,11 +395,12 @@ const onPointerMove = (e) => {
 }
 
 const onPointerDown = (e) => {
+  hover.value = null
   downAt = { x: e.clientX, y: e.clientY, t: performance.now() }
 }
 
 const onPointerUp = (e) => {
-  if (!downAt || !scene) return
+  if (!downAt || !scene || showGuide.value) return
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y)
   if (moved < 6 && performance.now() - downAt.t < 500) {
     const ll = scene.pick(e.clientX, e.clientY)
@@ -423,6 +442,90 @@ const onFrame = () => {
   placeLabel(meccaLabelEl.value, MECCA.lat, MECCA.lon)
 }
 
+// ---------- guide ----------
+
+const GUIDE_KEY = 'liveSimGuideSeen'
+const showGuide = ref(false)
+const guideBtnEl = ref(null)
+const legendEl = ref(null)
+const readoutEl = ref(null)
+const dockEl = ref(null)
+const speedsEl = ref(null)
+let legendWasCollapsed = null
+
+const guideSteps = computed(() => [
+  {
+    title: 'Welcome to the live globe',
+    text: 'This is the Earth right now, lit by the real sun: day on one side, night with city lights on the other.\nIt is showing live time, so things move slowly, just like the real sky.'
+  },
+  {
+    title: 'The prayer bands',
+    text: 'Each colour shows where a prayer time is in progress at this moment. The bright edge is where it is starting, and the colour fades toward where it ends.\nDrag to rotate the globe, scroll or pinch to zoom.'
+  },
+  {
+    title: 'Legend and layers',
+    text: 'Which colour is which prayer. Below it you can switch the bands, city lights and clouds on or off, or lock the view to the sun.',
+    target: () => legendEl.value
+  },
+  {
+    title: userPoint.value ? 'Your location' : 'Selected place',
+    text: 'This card shows the prayer in progress and when it ends. Tap anywhere on the globe to check another place.',
+    target: () => readoutEl.value
+  },
+  {
+    title: 'Speed up time',
+    text: 'Pick a faster speed to watch the bands sweep around the world like a radar. One full day passes in 24 seconds at 1 h/s.',
+    target: () => speedsEl.value
+  },
+  {
+    title: 'Travel through time',
+    text: 'Drag the slider to any time of day, or choose a date to see how the bands change with the seasons. Tap Go live to return to the real current moment.',
+    target: () => dockEl.value
+  },
+  {
+    title: 'Need this again?',
+    text: 'Open the guide any time with this button.',
+    target: () => guideBtnEl.value
+  }
+])
+
+const openGuide = () => {
+  hover.value = null
+  showGuide.value = true
+}
+
+const maybeAutoGuide = () => {
+  if (localStorage.getItem(GUIDE_KEY)) return
+  setTimeout(() => {
+    if (scene) openGuide()
+  }, 1400)
+}
+
+// expand the legend while its step is shown (collapsed by default on phones)
+const onGuideStep = (s) => {
+  const isLegendStep = s?.title === 'Legend and layers'
+  if (isLegendStep && legendCollapsed.value) {
+    legendWasCollapsed = true
+    legendCollapsed.value = false
+  } else if (!isLegendStep && legendWasCollapsed) {
+    legendCollapsed.value = true
+    legendWasCollapsed = null
+  }
+}
+
+const onGuideDone = () => {
+  if (legendWasCollapsed) {
+    legendCollapsed.value = true
+    legendWasCollapsed = null
+  }
+  try {
+    localStorage.setItem(GUIDE_KEY, 'true')
+  } catch {
+    /* ignore */
+  }
+  rootEl.value?.focus()
+}
+
 // ---------- lifecycle ----------
 
 const buildMarkers = () => {
@@ -439,9 +542,11 @@ onMounted(() => {
   scene = new GlobeScene(canvasEl.value, {
     onReady: () => {
       ready.value = true
+      maybeAutoGuide()
     }
   })
   scene.onFrame = onFrame
+  if (import.meta.env.DEV) window.__globe = scene // debugging aid, stripped from production builds
   scene.setParams(params.value)
   scene.setTime(new Date(simMs))
   scene.setLayers({ ...layers })
@@ -522,6 +627,17 @@ watch(userPoint, () => {
 .glass-btn :deep(.p-button-label),
 .glass-btn :deep(.p-button-icon) {
   color: #e8ecf5;
+}
+
+.top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.guide-btn-wrap {
+  display: inline-flex;
+  border-radius: 999px;
 }
 
 .title {
@@ -901,6 +1017,10 @@ watch(userPoint, () => {
 /* ---------- small screens ---------- */
 @media (max-width: 720px) {
   .title-sub {
+    display: none;
+  }
+
+  .guide-btn :deep(.p-button-label) {
     display: none;
   }
 
