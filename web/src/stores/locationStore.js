@@ -1,10 +1,12 @@
 /**
  * Location Store
- * Manages user location and geolocation
+ * Manages the user's chosen location.
  */
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+
+const STORAGE_KEY = 'deen-duniya-location'
 
 export const useLocationStore = defineStore('location', () => {
   // State
@@ -12,102 +14,70 @@ export const useLocationStore = defineStore('location', () => {
   const longitude = ref(null)
   const city = ref('')
   const country = ref('')
-  const timezone = ref('')
+  const timezone = ref('') // IANA timezone of the location (from geocoder or prayer API)
   const locationType = ref('auto') // 'auto', 'manual', 'city'
-  const isLoadingLocation = ref(false)
-  const locationError = ref(null)
-  const userPermittedLocation = ref(false)
 
   // Computed
   const hasLocation = computed(() => latitude.value !== null && longitude.value !== null)
+
   const locationDisplay = computed(() => {
-    if (city.value && country.value) {
-      return `${city.value}, ${country.value}`
-    }
-    if (latitude.value && longitude.value) {
-      return `${latitude.value.toFixed(4)}, ${longitude.value.toFixed(4)}`
+    if (city.value && country.value) return `${city.value}, ${country.value}`
+    if (city.value) return city.value
+    if (hasLocation.value) {
+      return `${Number(latitude.value).toFixed(4)}, ${Number(longitude.value).toFixed(4)}`
     }
     return 'Location not set'
   })
 
   // Actions
+
+  /**
+   * Ask the browser for the current position. Does NOT save anything;
+   * the caller decides whether to commit it with setLocation().
+   */
   const requestGeolocation = () => {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) {
-        locationError.value = 'Geolocation is not supported by your browser'
-        reject(new Error('Geolocation not supported'))
+        reject(new Error('Geolocation is not supported by your browser'))
         return
       }
 
-      isLoadingLocation.value = true
-      locationError.value = null
-
       navigator.geolocation.getCurrentPosition(
         (position) => {
-          latitude.value = position.coords.latitude
-          longitude.value = position.coords.longitude
-          locationType.value = 'auto'
-          userPermittedLocation.value = true
-          isLoadingLocation.value = false
-          
-          // Try to get timezone from coordinates
-          getTimezoneFromCoordinates()
-          
-          // Save to localStorage
-          saveToLocalStorage()
-          resolve({ latitude: latitude.value, longitude: longitude.value })
+          resolve({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude
+          })
         },
         (error) => {
-          isLoadingLocation.value = false
-          userPermittedLocation.value = false
-          
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              locationError.value = 'Location permission denied'
-              break
-            case error.POSITION_UNAVAILABLE:
-              locationError.value = 'Location information unavailable'
-              break
-            case error.TIMEOUT:
-              locationError.value = 'Location request timed out'
-              break
-            default:
-              locationError.value = 'An unknown error occurred'
+          const messages = {
+            1: 'Location permission denied. Allow location access in your browser, or pick a city instead.',
+            2: 'Location information is unavailable.',
+            3: 'Location request timed out.'
           }
-          
-          reject(error)
-        }
+          reject(new Error(messages[error.code] || 'An unknown error occurred'))
+        },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 600000 }
       )
     })
   }
 
-  const setManualLocation = (lat, lon, cityName = '', countryName = '') => {
-    latitude.value = lat
-    longitude.value = lon
-    city.value = cityName
-    country.value = countryName
-    locationType.value = 'manual'
-    locationError.value = null
-    
-    getTimezoneFromCoordinates()
+  /**
+   * Commit a location.
+   */
+  const setLocation = ({ lat, lon, cityName = '', countryName = '', tz = '', type = 'manual' }) => {
+    latitude.value = Number(lat)
+    longitude.value = Number(lon)
+    city.value = cityName || ''
+    country.value = countryName || ''
+    timezone.value = tz || ''
+    locationType.value = type
     saveToLocalStorage()
   }
 
-  const setCityLocation = (cityName, countryName, lat, lon) => {
-    city.value = cityName
-    country.value = countryName
-    latitude.value = lat
-    longitude.value = lon
-    locationType.value = 'city'
-    locationError.value = null
-    
-    getTimezoneFromCoordinates()
+  const setTimezone = (tz) => {
+    timezone.value = tz || ''
     saveToLocalStorage()
-  }
-
-  const getTimezoneFromCoordinates = () => {
-    // Use Intl.DateTimeFormat to get the user's timezone
-    timezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone
   }
 
   const saveToLocalStorage = () => {
@@ -117,27 +87,28 @@ export const useLocationStore = defineStore('location', () => {
       city: city.value,
       country: country.value,
       timezone: timezone.value,
-      locationType: locationType.value,
-      userPermittedLocation: userPermittedLocation.value
+      locationType: locationType.value
     }
-    localStorage.setItem('deen-duniya-location', JSON.stringify(locationData))
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(locationData))
+    } catch (e) {
+      console.warn('Could not save location:', e)
+    }
   }
 
   const loadFromLocalStorage = () => {
-    const saved = localStorage.getItem('deen-duniya-location')
-    if (saved) {
-      try {
-        const data = JSON.parse(saved)
-        latitude.value = data.latitude
-        longitude.value = data.longitude
-        city.value = data.city || ''
-        country.value = data.country || ''
-        timezone.value = data.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
-        locationType.value = data.locationType || 'manual'
-        userPermittedLocation.value = data.userPermittedLocation || false
-      } catch (error) {
-        console.error('Error loading location from localStorage:', error)
-      }
+    const saved = localStorage.getItem(STORAGE_KEY)
+    if (!saved) return
+    try {
+      const data = JSON.parse(saved)
+      latitude.value = data.latitude ?? null
+      longitude.value = data.longitude ?? null
+      city.value = data.city || ''
+      country.value = data.country || ''
+      timezone.value = data.timezone || ''
+      locationType.value = data.locationType || 'manual'
+    } catch (error) {
+      console.error('Error loading location from localStorage:', error)
     }
   }
 
@@ -148,35 +119,24 @@ export const useLocationStore = defineStore('location', () => {
     country.value = ''
     timezone.value = ''
     locationType.value = 'auto'
-    locationError.value = null
-    userPermittedLocation.value = false
-    localStorage.removeItem('deen-duniya-location')
+    localStorage.removeItem(STORAGE_KEY)
   }
 
   // Initialize
   loadFromLocalStorage()
 
   return {
-    // State
     latitude,
     longitude,
     city,
     country,
     timezone,
     locationType,
-    isLoadingLocation,
-    locationError,
-    userPermittedLocation,
-    
-    // Computed
     hasLocation,
     locationDisplay,
-    
-    // Actions
     requestGeolocation,
-    setManualLocation,
-    setCityLocation,
-    getTimezoneFromCoordinates,
+    setLocation,
+    setTimezone,
     saveToLocalStorage,
     loadFromLocalStorage,
     clearLocation

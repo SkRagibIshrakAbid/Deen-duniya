@@ -1,5 +1,5 @@
 <template>
-  <div id="app" :class="{ 'dark-mode': settingsStore.isDarkMode }">
+  <div id="app-root" :class="{ 'dark-mode': settingsStore.isDarkMode }">
     <!-- Header -->
     <header class="app-header">
       <div class="container">
@@ -9,20 +9,23 @@
             <h1>Deen Duniya</h1>
           </div>
           <div class="header-actions">
-            <Button 
-              icon="pi pi-bell" 
-              :badge="notificationsEnabled ? '✓' : ''" 
-              severity="secondary" 
-              text 
+            <Button
+              :icon="notificationsEnabled ? 'pi pi-bell' : 'pi pi-bell-slash'"
+              :severity="notificationsEnabled ? 'success' : 'secondary'"
+              text
+              rounded
               @click="toggleNotifications"
-              v-tooltip="'Notifications'"
+              v-tooltip.bottom="notificationsEnabled ? 'Notifications on' : 'Notifications off'"
+              :aria-label="notificationsEnabled ? 'Turn notifications off' : 'Turn notifications on'"
             />
-            <Button 
-              icon="pi pi-cog" 
-              severity="secondary" 
-              text 
+            <Button
+              icon="pi pi-cog"
+              severity="secondary"
+              text
+              rounded
               @click="showSettings = true"
-              v-tooltip="'Settings'"
+              v-tooltip.bottom="'Settings'"
+              aria-label="Settings"
             />
           </div>
         </div>
@@ -53,23 +56,28 @@
             </div>
             <div v-if="prayerTimesStore.dateInfo?.hijri" class="hijri-date">
               {{ formatHijriDate(prayerTimesStore.dateInfo.hijri) }}
-              <Tag 
-                v-if="prayerTimesStore.isRamadan" 
-                severity="success" 
+              <Tag
+                v-if="prayerTimesStore.isRamadan"
+                severity="success"
                 value="Ramadan"
                 class="ramadan-tag"
               />
             </div>
           </div>
-          <div class="location-display" @click="showLocationDialog = true" style="cursor: pointer;">
+          <button type="button" class="location-display" @click="showLocationDialog = true">
             <i class="pi pi-map-marker"></i>
-            {{ locationStore.locationDisplay }}
-            <Button icon="pi pi-pencil" text size="small" />
-          </div>
+            <span class="location-text">
+              <span>{{ locationStore.locationDisplay }}</span>
+              <small v-if="prayerTimesStore.isRemoteTimezone" class="local-time">
+                Local time {{ locationLocalTime }} ({{ prayerTimesStore.timezone }})
+              </small>
+            </span>
+            <i class="pi pi-pencil edit-icon"></i>
+          </button>
         </div>
 
         <!-- Prayer Times Card -->
-        <PrayerTimesCard />
+        <PrayerTimesCard id="prayer-times" @show-location-dialog="showLocationDialog = true" />
 
         <!-- Ramadan Card (only during Ramadan) -->
         <RamadanCard v-if="prayerTimesStore.isRamadan" />
@@ -79,41 +87,29 @@
       </div>
     </main>
 
-    <!-- Location Dialog -->
-    <LocationDialog 
-      v-model:visible="showLocationDialog" 
-      @location-set="onLocationSet" 
-    />
+    <LocationDialog v-model:visible="showLocationDialog" @location-set="onLocationSet" />
 
-    <!-- Settings Dialog -->
-    <SettingsDialog 
-      v-model:visible="showSettings" 
-      @settings-changed="onSettingsChanged"
-    />
+    <SettingsDialog v-model:visible="showSettings" @settings-changed="onSettingsChanged" />
 
-    <!-- Hijri Calibration Dialog -->
-    <HijriCalibrationDialog
-      v-model:visible="showCalibrationDialog"
-      @calibrated="onCalibrated"
-    />
+    <HijriCalibrationDialog v-model:visible="showCalibrationDialog" @calibrated="onCalibrated" />
 
-    <!-- Notification Permission Dialog -->
     <NotificationPermissionDialog
       v-model:visible="showNotificationPermission"
       @completed="onNotificationPermissionCompleted"
     />
 
-    <!-- Toast for notifications -->
     <Toast />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useToast } from 'primevue/usetoast'
 import { useLocationStore } from './stores/locationStore'
 import { usePrayerTimesStore } from './stores/prayerTimesStore'
 import { useSettingsStore } from './stores/settingsStore'
-import { getCurrentDateInfo, formatHijriDate } from './utils/dateUtils'
+import { useNow } from './composables/useNow'
+import { getCurrentDateInfo, formatHijriDate, nowInTz } from './utils/dateUtils'
 import notificationService from './services/notificationService'
 
 import Button from 'primevue/button'
@@ -133,131 +129,167 @@ import NotificationPermissionDialog from './components/NotificationPermissionDia
 const locationStore = useLocationStore()
 const prayerTimesStore = usePrayerTimesStore()
 const settingsStore = useSettingsStore()
+const toast = useToast()
+const now = useNow()
 
 // State
 const showLocationDialog = ref(false)
 const showSettings = ref(false)
 const showCalibrationDialog = ref(false)
 const showNotificationPermission = ref(false)
-const currentDate = ref(getCurrentDateInfo())
 
 // Computed
 const notificationsEnabled = computed(() => settingsStore.notificationsEnabled)
 
-// Methods
+// Date shown in the header follows the selected location's timezone
+const currentDate = computed(() => {
+  void now.value
+  return getCurrentDateInfo(prayerTimesStore.effectiveTimezone)
+})
+
+const locationLocalTime = computed(() =>
+  nowInTz(prayerTimesStore.timezone, now.value).format(settingsStore.timeFormat === '12' ? 'h:mm A' : 'HH:mm')
+)
+
+// ---------- notifications ----------
+
+const notificationSchedule = computed(() => {
+  const settings = {
+    ...settingsStore.snapshot(),
+    isRamadan: prayerTimesStore.isRamadan,
+    ramadanContinuesTomorrow:
+      prayerTimesStore.isRamadan && prayerTimesStore.ramadanDay < prayerTimesStore.ramadanLength
+  }
+  return notificationService.buildSchedule(prayerTimesStore, settings)
+})
+
+watch(
+  notificationSchedule,
+  (events) => notificationService.setSchedule(events, { sound: settingsStore.notificationSound }),
+  { immediate: true }
+)
+
+const showPermissionProblem = (reason) => {
+  toast.add({
+    severity: 'warn',
+    summary: 'Notifications unavailable',
+    detail: reason === 'unsupported'
+      ? 'This browser does not support notifications.'
+      : "Notifications are blocked for this site. Allow them in your browser's site settings and try again.",
+    life: 7000
+  })
+}
+
 const toggleNotifications = async () => {
-  await settingsStore.toggleNotifications(!settingsStore.notificationsEnabled)
-  
-  if (settingsStore.notificationsEnabled) {
+  const result = await settingsStore.toggleNotifications(!settingsStore.notificationsEnabled)
+  if (result.enabled) {
+    notificationService.soundEnabled = settingsStore.notificationSound
     notificationService.showTestNotification()
-  }
-}
-
-const onLocationSet = async () => {
-  showLocationDialog.value = false
-  await prayerTimesStore.fetchTodayPrayerTimes()
-  
-  // Check if we need to show Hijri calibration dialog (first time setup during Ramadan)
-  const hasCalibrated = localStorage.getItem('hijriCalibrated')
-  if (!hasCalibrated && prayerTimesStore.isRamadan) {
-    // Wait a moment for prayer times to load fully
-    setTimeout(() => {
-      showCalibrationDialog.value = true
-    }, 500)
+  } else if (result.reason) {
+    showPermissionProblem(result.reason)
   } else {
-    // If not Ramadan or already calibrated, check for notification permission prompt
-    checkNotificationPermissionPrompt()
+    toast.add({ severity: 'info', summary: 'Notifications turned off', life: 3000 })
   }
-}
-
-const onCalibrated = async (adjustment) => {
-  // Refresh prayer times with new adjustment
-  await prayerTimesStore.fetchTodayPrayerTimes()
-  
-  // After calibration, check for notification permission prompt
-  checkNotificationPermissionPrompt()
 }
 
 const checkNotificationPermissionPrompt = () => {
-  const hasShownPrompt = localStorage.getItem('notificationPromptShown')
-  if (!hasShownPrompt) {
-    setTimeout(() => {
-      showNotificationPermission.value = true
-    }, 500)
+  if (localStorage.getItem('notificationPromptShown')) return
+  setTimeout(() => {
+    showNotificationPermission.value = true
+  }, 500)
+}
+
+const onNotificationPermissionCompleted = (result) => {
+  if (result?.enabled) {
+    notificationService.soundEnabled = settingsStore.notificationSound
+    notificationService.showTestNotification()
+  } else if (result?.reason) {
+    showPermissionProblem(result.reason)
   }
 }
 
-const onNotificationPermissionCompleted = (enabled) => {
-  if (enabled) {
-    setupNotifications()
+// ---------- Hijri calibration ----------
+
+const needsCalibration = () => prayerTimesStore.isRamadan && !localStorage.getItem('hijriCalibrated')
+
+const maybeShowCalibration = () => {
+  if (needsCalibration() && !showLocationDialog.value) {
+    setTimeout(() => {
+      showCalibrationDialog.value = true
+    }, 500)
+    return true
   }
+  return false
+}
+
+// ---------- events ----------
+
+const onLocationSet = async () => {
+  await prayerTimesStore.fetchTodayPrayerTimes()
+  if (!maybeShowCalibration()) checkNotificationPermissionPrompt()
+}
+
+const onCalibrated = async () => {
+  await prayerTimesStore.fetchTodayPrayerTimes()
+  checkNotificationPermissionPrompt()
 }
 
 const onSettingsChanged = async () => {
-  // Refresh prayer times when calculation settings change
   await prayerTimesStore.fetchTodayPrayerTimes()
 }
 
-const setupNotifications = () => {
-  if (settingsStore.notificationsEnabled && prayerTimesStore.todayTimings) {
-    notificationService.schedulePrayerNotifications(
-      prayerTimesStore.todayTimings,
-      settingsStore,
-      prayerTimesStore.isRamadan
-    )
+// Refetch when the location's calendar day rolls over (also after sleep / tab return)
+let refetching = false
+watch(
+  () => prayerTimesStore.isStale,
+  async (stale) => {
+    if (!stale || refetching) return
+    refetching = true
+    try {
+      await prayerTimesStore.fetchTodayPrayerTimes()
+    } finally {
+      refetching = false
+    }
   }
+)
+
+// Ramadan may begin while the app is open
+watch(() => prayerTimesStore.isRamadan, (isRamadan) => {
+  if (isRamadan) maybeShowCalibration()
+})
+
+// Manifest shortcuts: /#settings and /#prayer-times
+const handleHash = () => {
+  const hash = window.location.hash
+  if (hash === '#settings') {
+    showSettings.value = true
+  } else if (hash === '#prayer-times') {
+    document.getElementById('prayer-times')?.scrollIntoView({ behavior: 'smooth' })
+  } else {
+    return
+  }
+  history.replaceState(null, '', window.location.pathname + window.location.search)
 }
 
 // Lifecycle
 onMounted(async () => {
-  // Try to load saved location and prayer times
-  prayerTimesStore.loadFromLocalStorage()
-  
-  // If we have location, fetch prayer times
-  if (locationStore.hasLocation && !prayerTimesStore.todayTimings) {
-    await prayerTimesStore.fetchTodayPrayerTimes()
-  }
-  
-  // If no location, show location dialog after a short delay
+  notificationService.start()
+  window.addEventListener('hashchange', handleHash)
+  handleHash()
+
   if (!locationStore.hasLocation) {
     setTimeout(() => {
       showLocationDialog.value = true
-    }, 1000)
+    }, 800)
+    return
   }
-  
-  // Update current date every second
-  setInterval(() => {
-    currentDate.value = getCurrentDateInfo()
-  }, 1000)
-  
-  // Setup notifications
-  setupNotifications()
-  
-  // Refresh prayer times at midnight
-  const now = new Date()
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1)
-  const msUntilMidnight = tomorrow - now
-  
-  setTimeout(() => {
-    prayerTimesStore.fetchTodayPrayerTimes()
-    // Then refresh every 24 hours
-    setInterval(() => {
-      prayerTimesStore.fetchTodayPrayerTimes()
-    }, 86400000) // 24 hours
-  }, msUntilMidnight)
+
+  await prayerTimesStore.loadFromLocalStorage()
+  maybeShowCalibration()
 })
 
-// Watch for prayer times changes to update notifications
-watch(() => prayerTimesStore.todayTimings, () => {
-  setupNotifications()
-}, { deep: true })
-
-watch(() => settingsStore.notificationsEnabled, () => {
-  if (settingsStore.notificationsEnabled) {
-    setupNotifications()
-  } else {
-    notificationService.clearScheduledNotifications()
-  }
+onUnmounted(() => {
+  window.removeEventListener('hashchange', handleHash)
 })
 </script>
 
@@ -294,7 +326,7 @@ watch(() => settingsStore.notificationsEnabled, () => {
   --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
-#app {
+#app-root {
   min-height: 100vh;
   background-color: var(--bg-color);
   color: var(--text-color);
@@ -414,6 +446,29 @@ watch(() => settingsStore.notificationsEnabled, () => {
   border: 1px solid var(--border-color);
   border-radius: 0.5rem;
   transition: all 0.3s;
+}
+
+.location-display {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.location-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.local-time {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.edit-icon {
+  font-size: 0.8rem;
+  opacity: 0.7;
 }
 
 .location-display:hover {

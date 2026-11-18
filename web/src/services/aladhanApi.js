@@ -20,14 +20,11 @@ export const getPrayerTimes = async (date, latitude, longitude, method = 3, scho
     })
     
     const url = `${API_BASE_URL}/timings/${date}?${params}`
-    console.log('Fetching prayer times with adjustment:', adjustment)
-    console.log('Full API URL:', url)
     
     const response = await fetch(url)
     const data = await response.json()
     
     if (data.code === 200) {
-      console.log('Hijri date from API:', data.data.date.hijri)
       return data.data
     }
     throw new Error(data.status || 'Failed to fetch prayer times')

@@ -1,6 +1,11 @@
 /**
  * Prayer Times Store
- * Manages prayer times data and calculations
+ * Manages prayer times data and time-based calculations.
+ *
+ * All times returned by the API are wall-clock times in the *location's*
+ * timezone (data.meta.timezone). Every comparison against "now" is done on
+ * absolute instants built with that timezone, so countdowns stay correct even
+ * when the selected city is in a different timezone from the browser.
  */
 
 import { defineStore } from 'pinia'
@@ -9,106 +14,169 @@ import dayjs from 'dayjs'
 import { getPrayerTimes, getMonthlyCalendar } from '../services/aladhanApi'
 import { useLocationStore } from './locationStore'
 import { useSettingsStore } from './settingsStore'
+import { useNow } from '../composables/useNow'
+import { instantAt, todayInTz, browserTimezone, formatDuration } from '../utils/dateUtils'
+
+const STORAGE_KEY = 'deen-duniya-prayer-times'
+const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
 
 export const usePrayerTimesStore = defineStore('prayerTimes', () => {
+  const now = useNow()
+
   // State
   const todayTimings = ref(null)
-  const monthlyTimings = ref([])
   const dateInfo = ref(null)
+  const timezone = ref(null)
   const isLoading = ref(false)
   const error = ref(null)
   const lastUpdated = ref(null)
 
-  // Prayer names mapping
-  const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
+  // Monthly calendar has its own loading/error state so it never disturbs today's card
+  const monthlyTimings = ref([])
+  const calendarLoading = ref(false)
+  const calendarError = ref(null)
 
-  // Computed
+  const prayerNames = PRAYER_NAMES
+
+  // ---------- helpers ----------
+
+  const effectiveTimezone = computed(() => {
+    const locationStore = useLocationStore()
+    return timezone.value || locationStore.timezone || browserTimezone()
+  })
+
+  /**
+   * Absolute instant (dayjs) for a timing name, optionally shifted by whole days.
+   * Uses today's timings for neighbouring days (differences are only a minute or two).
+   */
+  const instant = (name, dayOffset = 0) => {
+    if (!todayTimings.value?.[name] || !dateInfo.value?.gregorian?.date) return null
+    let offset = dayOffset
+    // "Midnight" (e.g. 00:04) belongs to the night after today's Isha
+    if (name === 'Midnight') {
+      const hour = parseInt(todayTimings.value.Midnight)
+      if (hour < 12) offset += 1
+    }
+    return instantAt(dateInfo.value.gregorian.date, todayTimings.value[name], timezone.value, offset)
+  }
+
+  /**
+   * End of a prayer's window.
+   * Fajr ends at Sunrise, Isha at the next Fajr, others at the following prayer.
+   */
+  const prayerEnd = (name, dayOffset = 0) => {
+    switch (name) {
+      case 'Fajr': return instant('Sunrise', dayOffset)
+      case 'Dhuhr': return instant('Asr', dayOffset)
+      case 'Asr': return instant('Maghrib', dayOffset)
+      case 'Maghrib': return instant('Isha', dayOffset)
+      case 'Isha': return instant('Fajr', dayOffset + 1)
+      default: return null
+    }
+  }
+
+  // ---------- computed ----------
+
   const nextPrayer = computed(() => {
     if (!todayTimings.value) return null
+    const nowMs = now.value
 
-    const now = dayjs()
-    const timings = todayTimings.value
-
-    for (const prayerName of prayerNames) {
-      if (timings[prayerName]) {
-        const prayerTime = dayjs(`${now.format('YYYY-MM-DD')} ${timings[prayerName]}`, 'YYYY-MM-DD HH:mm')
-        
-        if (prayerTime.isAfter(now)) {
+    for (const offset of [0, 1]) {
+      for (const name of PRAYER_NAMES) {
+        const at = instant(name, offset)
+        if (at && at.valueOf() > nowMs) {
           return {
-            name: prayerName,
-            time: timings[prayerName],
-            timeUntil: prayerTime.diff(now)
+            name,
+            time: todayTimings.value[name],
+            at: at.valueOf(),
+            timeUntil: at.valueOf() - nowMs,
+            isTomorrow: offset === 1
           }
         }
       }
     }
-
-    // If no prayer is remaining today, return Fajr of tomorrow
-    const tomorrow = now.add(1, 'day')
-    const fajrTime = dayjs(`${tomorrow.format('YYYY-MM-DD')} ${timings.Fajr}`, 'YYYY-MM-DD HH:mm')
-    
-    return {
-      name: 'Fajr',
-      time: timings.Fajr,
-      timeUntil: fajrTime.diff(now),
-      isTomorrow: true
-    }
+    return null
   })
 
   const currentPrayer = computed(() => {
     if (!todayTimings.value) return null
+    const nowMs = now.value
 
-    const now = dayjs()
-    const timings = todayTimings.value
-
-    let currentPrayer = null
-
-    for (let i = prayerNames.length - 1; i >= 0; i--) {
-      const prayerName = prayerNames[i]
-      if (timings[prayerName]) {
-        const prayerTime = dayjs(`${now.format('YYYY-MM-DD')} ${timings[prayerName]}`, 'YYYY-MM-DD HH:mm')
-        
-        if (prayerTime.isBefore(now)) {
-          currentPrayer = {
-            name: prayerName,
-            time: timings[prayerName]
+    // Walk backwards from today's Isha through yesterday's Isha
+    for (const offset of [0, -1]) {
+      for (let i = PRAYER_NAMES.length - 1; i >= 0; i--) {
+        const name = PRAYER_NAMES[i]
+        const start = instant(name, offset)
+        if (start && start.valueOf() <= nowMs) {
+          const end = prayerEnd(name, offset)
+          if (end && end.valueOf() > nowMs) {
+            return {
+              name,
+              time: todayTimings.value[name],
+              start: start.valueOf(),
+              end: end.valueOf()
+            }
           }
-          break
+          // Latest started prayer has already ended (e.g. after Sunrise): no current prayer
+          return null
         }
       }
     }
-
-    return currentPrayer
+    return null
   })
 
-  const isRamadan = computed(() => {
-    if (!dateInfo.value?.hijri) return false
-    return dateInfo.value.hijri.month.number === 9
+  /** True when the location's calendar day has moved past the loaded data */
+  const isStale = computed(() => {
+    if (!dateInfo.value?.gregorian?.date) return false
+    // touch `now` so this re-evaluates every tick
+    void now.value
+    return dateInfo.value.gregorian.date !== todayInTz(effectiveTimezone.value)
   })
+
+  /** True when the location's timezone differs from the browser's */
+  const isRemoteTimezone = computed(() => {
+    if (!timezone.value) return false
+    const probe = Date.now()
+    return dayjs(probe).tz(timezone.value).utcOffset() !== dayjs(probe).utcOffset()
+  })
+
+  const isRamadan = computed(() => dateInfo.value?.hijri?.month?.number === 9)
 
   const ramadanDay = computed(() => {
-    if (!isRamadan.value || !dateInfo.value?.hijri) return null
+    if (!isRamadan.value) return null
     return parseInt(dateInfo.value.hijri.day)
   })
 
-  const sehriTime = computed(() => {
-    if (!todayTimings.value) return null
-    // Sehri ends at Fajr time (technically at Imsak, but we'll use Fajr)
-    return todayTimings.value.Imsak || todayTimings.value.Fajr
+  const ramadanLength = computed(() => {
+    if (!isRamadan.value) return 30
+    return parseInt(dateInfo.value.hijri.month.days) || 30
   })
 
-  const iftarTime = computed(() => {
-    if (!todayTimings.value) return null
-    return todayTimings.value.Maghrib
-  })
+  // Sehri ends at Imsak when provided, otherwise Fajr
+  const sehriName = computed(() => (todayTimings.value?.Imsak ? 'Imsak' : 'Fajr'))
+  const sehriTime = computed(() => todayTimings.value?.[sehriName.value] || null)
+  const iftarTime = computed(() => todayTimings.value?.Maghrib || null)
 
-  // Actions
-  const fetchTodayPrayerTimes = async () => {
+  // ---------- actions ----------
+
+  const settingsSignature = () => {
+    const locationStore = useLocationStore()
+    const settingsStore = useSettingsStore()
+    return [
+      locationStore.latitude,
+      locationStore.longitude,
+      settingsStore.calculationMethod,
+      settingsStore.asrCalculation,
+      settingsStore.hijriAdjustment
+    ].join('|')
+  }
+
+  const fetchTodayPrayerTimes = async (_retry = false) => {
     const locationStore = useLocationStore()
     const settingsStore = useSettingsStore()
 
     if (!locationStore.hasLocation) {
-      error.value = 'Location not set'
+      error.value = null
       return
     }
 
@@ -116,10 +184,9 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     error.value = null
 
     try {
-      const today = dayjs().format('DD-MM-YYYY')
-      console.log('Fetching prayer times with hijri adjustment:', settingsStore.hijriAdjustment)
+      const tz = locationStore.timezone || browserTimezone()
       const data = await getPrayerTimes(
-        today,
+        todayInTz(tz),
         locationStore.latitude,
         locationStore.longitude,
         settingsStore.calculationMethod,
@@ -127,19 +194,26 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
         settingsStore.hijriAdjustment
       )
 
+      const apiTz = data.meta?.timezone || tz
       todayTimings.value = data.timings
       dateInfo.value = data.date
+      timezone.value = apiTz
       lastUpdated.value = dayjs()
-      
-      console.log('Prayer times fetched successfully')
-      console.log('Hijri date from store:', dateInfo.value.hijri)
-      console.log('Is Ramadan:', dateInfo.value.hijri.month.number === 9)
-      console.log('Ramadan day:', dateInfo.value.hijri.day)
 
-      // Save to localStorage
+      if (apiTz !== locationStore.timezone) {
+        locationStore.setTimezone(apiTz)
+      }
+
       saveToLocalStorage()
+
+      // We guessed the wrong calendar day for this location (timezone was unknown): refetch once
+      if (!_retry && data.date.gregorian.date !== todayInTz(apiTz)) {
+        await fetchTodayPrayerTimes(true)
+      }
     } catch (err) {
-      error.value = err.message
+      error.value = navigator.onLine === false
+        ? 'You appear to be offline. Showing the last saved prayer times.'
+        : (err.message || 'Failed to load prayer times')
       console.error('Error fetching prayer times:', err)
     } finally {
       isLoading.value = false
@@ -150,16 +224,13 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     const locationStore = useLocationStore()
     const settingsStore = useSettingsStore()
 
-    if (!locationStore.hasLocation) {
-      error.value = 'Location not set'
-      return
-    }
+    if (!locationStore.hasLocation) return
 
-    isLoading.value = true
-    error.value = null
+    calendarLoading.value = true
+    calendarError.value = null
 
     try {
-      const data = await getMonthlyCalendar(
+      monthlyTimings.value = await getMonthlyCalendar(
         year,
         month,
         locationStore.latitude,
@@ -168,13 +239,12 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
         settingsStore.asrCalculation,
         settingsStore.hijriAdjustment
       )
-
-      monthlyTimings.value = data
     } catch (err) {
-      error.value = err.message
+      calendarError.value = err.message || 'Failed to load calendar'
+      monthlyTimings.value = []
       console.error('Error fetching monthly calendar:', err)
     } finally {
-      isLoading.value = false
+      calendarLoading.value = false
     }
   }
 
@@ -182,96 +252,93 @@ export const usePrayerTimesStore = defineStore('prayerTimes', () => {
     const data = {
       todayTimings: todayTimings.value,
       dateInfo: dateInfo.value,
+      timezone: timezone.value,
       lastUpdated: lastUpdated.value?.toISOString(),
-      hijriAdjustment: useSettingsStore().hijriAdjustment
+      signature: settingsSignature()
     }
-    localStorage.setItem('deen-duniya-prayer-times', JSON.stringify(data))
-  }
-
-  const loadFromLocalStorage = () => {
-    const saved = localStorage.getItem('deen-duniya-prayer-times')
-    if (saved) {
-      try {
-        const data = JSON.parse(saved)
-        const settingsStore = useSettingsStore()
-        
-        // Check if data is from today
-        const savedDate = dayjs(data.lastUpdated)
-        const now = dayjs()
-        
-        // Check if hijri adjustment has changed
-        const adjustmentChanged = data.hijriAdjustment !== undefined && 
-                                  data.hijriAdjustment !== settingsStore.hijriAdjustment
-        
-        if (savedDate.isSame(now, 'day') && !adjustmentChanged) {
-          todayTimings.value = data.todayTimings
-          dateInfo.value = data.dateInfo
-          lastUpdated.value = savedDate
-          console.log('Using cached prayer times')
-        } else {
-          // Data is stale or adjustment changed, fetch fresh data
-          if (adjustmentChanged) {
-            console.log('Hijri adjustment changed, fetching fresh data')
-          }
-          fetchTodayPrayerTimes()
-        }
-      } catch (error) {
-        console.error('Error loading prayer times from localStorage:', error)
-        fetchTodayPrayerTimes()
-      }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    } catch (e) {
+      console.warn('Could not save prayer times:', e)
     }
   }
 
-  const getTimeUntilPrayer = (prayerName) => {
-    if (!todayTimings.value || !todayTimings.value[prayerName]) return null
+  /**
+   * Load cached times. Uses them only if they match the current location/settings
+   * and are for today in the location's timezone; otherwise fetches fresh data
+   * (keeping the cache on screen meanwhile).
+   */
+  const loadFromLocalStorage = async () => {
+    const locationStore = useLocationStore()
+    if (!locationStore.hasLocation) return
 
-    const now = dayjs()
-    const prayerTime = dayjs(`${now.format('YYYY-MM-DD')} ${todayTimings.value[prayerName]}`, 'YYYY-MM-DD HH:mm')
-
-    return prayerTime.diff(now)
-  }
-
-  const formatTimeUntil = (milliseconds) => {
-    if (milliseconds <= 0) return 'Now'
-
-    const duration = dayjs.duration(milliseconds)
-    const hours = Math.floor(duration.asHours())
-    const minutes = duration.minutes()
-    const seconds = duration.seconds()
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`
-    } else if (minutes > 0) {
-      return `${minutes}m ${seconds}s`
-    } else {
-      return `${seconds}s`
+    let cached = null
+    try {
+      cached = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null')
+    } catch {
+      cached = null
     }
+
+    const sameSettings = cached?.signature === settingsSignature()
+    if (cached?.todayTimings && sameSettings) {
+      todayTimings.value = cached.todayTimings
+      dateInfo.value = cached.dateInfo
+      timezone.value = cached.timezone || null
+      lastUpdated.value = cached.lastUpdated ? dayjs(cached.lastUpdated) : null
+
+      const tz = cached.timezone || locationStore.timezone || browserTimezone()
+      if (cached.dateInfo?.gregorian?.date === todayInTz(tz)) return
+    }
+
+    await fetchTodayPrayerTimes()
   }
+
+  /** Clear today's data (e.g. when the location changes) */
+  const reset = () => {
+    todayTimings.value = null
+    dateInfo.value = null
+    timezone.value = null
+    monthlyTimings.value = []
+  }
+
+  const formatTimeUntil = (milliseconds) => formatDuration(milliseconds)
 
   return {
     // State
     todayTimings,
     monthlyTimings,
     dateInfo,
+    timezone,
     isLoading,
     error,
+    calendarLoading,
+    calendarError,
     lastUpdated,
     prayerNames,
-    
+
     // Computed
+    effectiveTimezone,
     nextPrayer,
     currentPrayer,
+    isStale,
+    isRemoteTimezone,
     isRamadan,
     ramadanDay,
+    ramadanLength,
+    sehriName,
     sehriTime,
     iftarTime,
-    
+
+    // Helpers
+    instant,
+    prayerEnd,
+
     // Actions
     fetchTodayPrayerTimes,
     fetchMonthlyCalendar,
     saveToLocalStorage,
     loadFromLocalStorage,
-    getTimeUntilPrayer,
+    reset,
     formatTimeUntil
   }
 })

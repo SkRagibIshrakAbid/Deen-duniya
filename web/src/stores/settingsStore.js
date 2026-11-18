@@ -6,36 +6,44 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
-export const useSettingsStore = defineStore('settings', () => {
-  // State
-  const calculationMethod = ref(3) // Default: Muslim World League
-  const asrCalculation = ref(0) // Default: Shafi (Standard)
-  const hijriAdjustment = ref(0) // Hijri date adjustment (-2 to +2 days)
-  const timeFormat = ref('12') // '12' or '24'
-  const language = ref('en') // 'en' or 'ar'
-  const theme = ref('light') // 'light', 'dark', 'auto'
-  
-  // Notification settings
-  const notificationsEnabled = ref(false)
-  const notificationPermission = ref('default') // 'default', 'granted', 'denied'
-  const notifyBeforePrayer = ref(true)
-  const notifyBeforeMinutes = ref(15) // minutes before prayer
-  const notifyAtPrayer = ref(true)
-  const notifyPrayerEnd = ref(false)
-  const notifyPrayerEndMinutes = ref(30) // minutes before prayer ends
-  const notifyRamadan = ref(true)
-  const notifyRamadanSehri = ref(true)
-  const notifyRamadanIftar = ref(true)
-  const notificationSound = ref(true)
-  
-  // Prayer-specific notification settings
-  const notifyFajr = ref(true)
-  const notifyDhuhr = ref(true)
-  const notifyAsr = ref(true)
-  const notifyMaghrib = ref(true)
-  const notifyIsha = ref(true)
+const STORAGE_KEY = 'deen-duniya-settings'
 
-  // Calculation method names
+// Every persisted setting and its default value
+const DEFAULTS = {
+  calculationMethod: 3, // Muslim World League
+  asrCalculation: 0, // Shafi (Standard)
+  hijriAdjustment: 0, // -2 to +2 days
+  timeFormat: '12', // '12' or '24'
+  language: 'en',
+  theme: 'light', // 'light', 'dark', 'auto'
+  notificationsEnabled: false,
+  notifyBeforePrayer: true,
+  notifyBeforeMinutes: 15,
+  notifyAtPrayer: true,
+  notifyPrayerEnd: false,
+  notifyPrayerEndMinutes: 30,
+  notifyRamadan: true,
+  notifyRamadanSehri: true,
+  notifyRamadanIftar: true,
+  notificationSound: true,
+  notifyFajr: true,
+  notifyDhuhr: true,
+  notifyAsr: true,
+  notifyMaghrib: true,
+  notifyIsha: true
+}
+
+export const NOTIFICATION_KEYS = Object.keys(DEFAULTS).filter(
+  (k) => k.startsWith('notify') || k === 'notificationSound'
+)
+
+export const useSettingsStore = defineStore('settings', () => {
+  // One ref per setting
+  const state = Object.fromEntries(Object.entries(DEFAULTS).map(([k, v]) => [k, ref(v)]))
+
+  const notificationPermission = ref('Notification' in window ? Notification.permission : 'unsupported')
+  const systemPrefersDark = ref(window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false)
+
   const calculationMethods = [
     { id: 0, name: 'Jafari / Shia Ithna-Ashari' },
     { id: 1, name: 'University of Islamic Sciences, Karachi' },
@@ -63,235 +71,114 @@ export const useSettingsStore = defineStore('settings', () => {
   ]
 
   // Computed
-  const currentCalculationMethod = computed(() => {
-    return calculationMethods.find(m => m.id === calculationMethod.value) || calculationMethods[3]
-  })
+  const currentCalculationMethod = computed(() =>
+    calculationMethods.find((m) => m.id === state.calculationMethod.value) || calculationMethods[3]
+  )
 
-  const asrCalculationName = computed(() => {
-    return asrCalculation.value === 0 ? 'Shafi' : 'Hanafi'
-  })
+  const asrCalculationName = computed(() => (state.asrCalculation.value === 0 ? 'Shafi' : 'Hanafi'))
 
   const isDarkMode = computed(() => {
-    if (theme.value === 'auto') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches
-    }
-    return theme.value === 'dark'
+    if (state.theme.value === 'auto') return systemPrefersDark.value
+    return state.theme.value === 'dark'
   })
 
-  // Actions
-  const setCalculationMethod = (methodId) => {
-    calculationMethod.value = methodId
-    saveToLocalStorage()
-  }
+  // ---------- persistence ----------
 
-  const setAsrCalculation = (method) => {
-    asrCalculation.value = method
-    saveToLocalStorage()
-  }
-
-  const setHijriAdjustment = (adjustment) => {
-    console.log('Setting hijri adjustment to:', adjustment)
-    hijriAdjustment.value = adjustment
-    saveToLocalStorage()
-  }
-
-  const setTimeFormat = (format) => {
-    timeFormat.value = format
-    saveToLocalStorage()
-  }
-
-  const setLanguage = (lang) => {
-    language.value = lang
-    saveToLocalStorage()
-  }
-
-  const setTheme = (newTheme) => {
-    theme.value = newTheme
-    applyTheme()
-    saveToLocalStorage()
-  }
-
-  const applyTheme = () => {
-    const root = document.documentElement
-    if (isDarkMode.value) {
-      root.classList.add('dark-mode')
-    } else {
-      root.classList.remove('dark-mode')
-    }
-  }
-
-  const requestNotificationPermission = async () => {
-    if (!('Notification' in window)) {
-      console.error('This browser does not support notifications')
-      return false
-    }
-
-    if (Notification.permission === 'granted') {
-      notificationPermission.value = 'granted'
-      notificationsEnabled.value = true
-      saveToLocalStorage()
-      return true
-    }
-
-    if (Notification.permission !== 'denied') {
-      const permission = await Notification.requestPermission()
-      notificationPermission.value = permission
-      
-      if (permission === 'granted') {
-        notificationsEnabled.value = true
-        saveToLocalStorage()
-        return true
-      }
-    }
-
-    notificationsEnabled.value = false
-    saveToLocalStorage()
-    return false
-  }
-
-  const toggleNotifications = async (enabled) => {
-    if (enabled) {
-      const granted = await requestNotificationPermission()
-      notificationsEnabled.value = granted
-    } else {
-      notificationsEnabled.value = false
-    }
-    saveToLocalStorage()
-  }
-
-  const updateNotificationSettings = (settings) => {
-    Object.keys(settings).forEach(key => {
-      if (key in { notifyBeforePrayer, notifyBeforeMinutes, notifyAtPrayer, notifyPrayerEnd, notifyPrayerEndMinutes, notifyRamadan, notifyRamadanSehri, notifyRamadanIftar, notificationSound, notifyFajr, notifyDhuhr, notifyAsr, notifyMaghrib, notifyIsha }) {
-        switch(key) {
-          case 'notifyBeforePrayer': notifyBeforePrayer.value = settings[key]; break
-          case 'notifyBeforeMinutes': notifyBeforeMinutes.value = settings[key]; break
-          case 'notifyAtPrayer': notifyAtPrayer.value = settings[key]; break
-          case 'notifyPrayerEnd': notifyPrayerEnd.value = settings[key]; break
-          case 'notifyPrayerEndMinutes': notifyPrayerEndMinutes.value = settings[key]; break
-          case 'notifyRamadan': notifyRamadan.value = settings[key]; break
-          case 'notifyRamadanSehri': notifyRamadanSehri.value = settings[key]; break
-          case 'notifyRamadanIftar': notifyRamadanIftar.value = settings[key]; break
-          case 'notificationSound': notificationSound.value = settings[key]; break
-          case 'notifyFajr': notifyFajr.value = settings[key]; break
-          case 'notifyDhuhr': notifyDhuhr.value = settings[key]; break
-          case 'notifyAsr': notifyAsr.value = settings[key]; break
-          case 'notifyMaghrib': notifyMaghrib.value = settings[key]; break
-          case 'notifyIsha': notifyIsha.value = settings[key]; break
-        }
-      }
-    })
-    saveToLocalStorage()
-  }
+  const snapshot = () => Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, state[k].value]))
 
   const saveToLocalStorage = () => {
-    const settings = {
-      calculationMethod: calculationMethod.value,
-      asrCalculation: asrCalculation.value,
-      hijriAdjustment: hijriAdjustment.value,
-      timeFormat: timeFormat.value,
-      language: language.value,
-      theme: theme.value,
-      notificationsEnabled: notificationsEnabled.value,
-      notificationPermission: notificationPermission.value,
-      notifyBeforePrayer: notifyBeforePrayer.value,
-      notifyBeforeMinutes: notifyBeforeMinutes.value,
-      notifyAtPrayer: notifyAtPrayer.value,
-      notifyPrayerEnd: notifyPrayerEnd.value,
-      notifyPrayerEndMinutes: notifyPrayerEndMinutes.value,
-      notifyRamadan: notifyRamadan.value,
-      notifyRamadanSehri: notifyRamadanSehri.value,
-      notifyRamadanIftar: notifyRamadanIftar.value,
-      notificationSound: notificationSound.value,
-      notifyFajr: notifyFajr.value,
-      notifyDhuhr: notifyDhuhr.value,
-      notifyAsr: notifyAsr.value,
-      notifyMaghrib: notifyMaghrib.value,
-      notifyIsha: notifyIsha.value
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot()))
+    } catch (e) {
+      console.warn('Could not save settings:', e)
     }
-    localStorage.setItem('deen-duniya-settings', JSON.stringify(settings))
   }
 
   const loadFromLocalStorage = () => {
-    const saved = localStorage.getItem('deen-duniya-settings')
-    if (saved) {
-      try {
-        const settings = JSON.parse(saved)
-        calculationMethod.value = settings.calculationMethod ?? 3
-        asrCalculation.value = settings.asrCalculation ?? 0
-        hijriAdjustment.value = settings.hijriAdjustment ?? 0
-        console.log('Loaded hijri adjustment from localStorage:', hijriAdjustment.value)
-        timeFormat.value = settings.timeFormat ?? '12'
-        language.value = settings.language ?? 'en'
-        theme.value = settings.theme ?? 'light'
-        notificationsEnabled.value = settings.notificationsEnabled ?? false
-        notificationPermission.value = settings.notificationPermission ?? 'default'
-        notifyBeforePrayer.value = settings.notifyBeforePrayer ?? true
-        notifyBeforeMinutes.value = settings.notifyBeforeMinutes ?? 15
-        notifyAtPrayer.value = settings.notifyAtPrayer ?? true
-        notifyPrayerEnd.value = settings.notifyPrayerEnd ?? false
-        notifyPrayerEndMinutes.value = settings.notifyPrayerEndMinutes ?? 30
-        notifyRamadan.value = settings.notifyRamadan ?? true
-        notifyRamadanSehri.value = settings.notifyRamadanSehri ?? true
-        notifyRamadanIftar.value = settings.notifyRamadanIftar ?? true
-        notificationSound.value = settings.notificationSound ?? true
-        notifyFajr.value = settings.notifyFajr ?? true
-        notifyDhuhr.value = settings.notifyDhuhr ?? true
-        notifyAsr.value = settings.notifyAsr ?? true
-        notifyMaghrib.value = settings.notifyMaghrib ?? true
-        notifyIsha.value = settings.notifyIsha ?? true
-        
-        applyTheme()
-      } catch (error) {
-        console.error('Error loading settings from localStorage:', error)
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')
+      for (const key of Object.keys(DEFAULTS)) {
+        if (saved[key] !== undefined && saved[key] !== null) state[key].value = saved[key]
       }
-    } else {
-      applyTheme()
+    } catch (error) {
+      console.error('Error loading settings from localStorage:', error)
     }
-    
-    // Force save to ensure new fields (like hijriAdjustment) are persisted
+    // Notifications can't be "on" without browser permission
+    if (notificationPermission.value !== 'granted') state.notificationsEnabled.value = false
+    applyTheme()
+  }
+
+  // ---------- actions ----------
+
+  const applyTheme = () => {
+    document.documentElement.classList.toggle('dark-mode', isDarkMode.value)
+  }
+
+  /** Update any subset of settings at once */
+  const update = (changes) => {
+    for (const [key, value] of Object.entries(changes)) {
+      if (key in DEFAULTS) state[key].value = value
+    }
+    if ('theme' in changes) applyTheme()
     saveToLocalStorage()
   }
 
-  // Initialize
-  loadFromLocalStorage()
+  const setCalculationMethod = (v) => update({ calculationMethod: v })
+  const setAsrCalculation = (v) => update({ asrCalculation: v })
+  const setHijriAdjustment = (v) => update({ hijriAdjustment: v })
+  const setTimeFormat = (v) => update({ timeFormat: v })
+  const setLanguage = (v) => update({ language: v })
+  const setTheme = (v) => update({ theme: v })
+  const updateNotificationSettings = (settings) => update(
+    Object.fromEntries(Object.entries(settings).filter(([k]) => NOTIFICATION_KEYS.includes(k)))
+  )
 
-  // Check current notification permission
-  if ('Notification' in window) {
+  const requestNotificationPermission = async () => {
+    if (!('Notification' in window)) {
+      notificationPermission.value = 'unsupported'
+      return false
+    }
+    if (Notification.permission === 'default') {
+      await Notification.requestPermission()
+    }
     notificationPermission.value = Notification.permission
+    return Notification.permission === 'granted'
   }
 
+  /**
+   * Turn notifications on/off. Returns the resulting state:
+   * { enabled: boolean, reason?: 'denied' | 'unsupported' }
+   */
+  const toggleNotifications = async (enabled) => {
+    if (!enabled) {
+      update({ notificationsEnabled: false })
+      return { enabled: false }
+    }
+    const granted = await requestNotificationPermission()
+    update({ notificationsEnabled: granted })
+    if (granted) return { enabled: true }
+    return { enabled: false, reason: notificationPermission.value === 'unsupported' ? 'unsupported' : 'denied' }
+  }
+
+  // ---------- init ----------
+
+  loadFromLocalStorage()
+
+  // Follow OS light/dark changes while on "Auto"
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', (e) => {
+    systemPrefersDark.value = e.matches
+    applyTheme()
+  })
+
   return {
-    // State
-    calculationMethod,
-    asrCalculation,
-    hijriAdjustment,
-    timeFormat,
-    language,
-    theme,
-    notificationsEnabled,
+    ...state,
     notificationPermission,
-    notifyBeforePrayer,
-    notifyBeforeMinutes,
-    notifyAtPrayer,
-    notifyPrayerEnd,
-    notifyPrayerEndMinutes,
-    notifyRamadan,
-    notifyRamadanSehri,
-    notifyRamadanIftar,
-    notificationSound,
-    notifyFajr,
-    notifyDhuhr,
-    notifyAsr,
-    notifyMaghrib,
-    notifyIsha,
     calculationMethods,
-    
-    // Computed
     currentCalculationMethod,
     asrCalculationName,
     isDarkMode,
-    
-    // Actions
+    snapshot,
+    update,
     setCalculationMethod,
     setAsrCalculation,
     setHijriAdjustment,

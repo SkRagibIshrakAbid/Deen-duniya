@@ -92,6 +92,7 @@ const dateOptions = computed(() => {
     // adjustment +1 means Hijri date is 1 day ahead (Ramadan started earlier)
     // adjustment -1 means Hijri date is 1 day behind (Ramadan started later)
     const todayRamadanDay = ramadanDay + adjustment
+    if (todayRamadanDay < 1 || todayRamadanDay > (prayerTimesStore.ramadanLength || 30)) continue
     const ramadanStartDate = today.subtract(todayRamadanDay - 1, 'day')
     
     options.push({
@@ -158,24 +159,24 @@ const confirmSelection = () => {
 
 .date-option {
   padding: 1rem;
-  border: 2px solid var(--surface-border);
+  border: 2px solid var(--border-color);
   border-radius: 0.5rem;
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  background-color: var(--surface-ground);
+  background-color: var(--bg-color);
 }
 
 .date-option:hover {
   border-color: var(--primary-color);
-  background-color: var(--surface-hover);
+  background-color: var(--surface-color);
 }
 
 .date-option.selected {
   border-color: var(--primary-color);
-  background-color: var(--primary-50);
+  background-color: rgba(44, 95, 45, 0.1);
 }
 
 .option-header {

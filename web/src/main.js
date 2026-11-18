@@ -31,40 +31,19 @@ app.directive('tooltip', Tooltip)
 
 app.mount('#app')
 
-// Register Service Worker for persistent notifications
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', async () => {
-    try {
-      const registration = await navigator.serviceWorker.register('/service-worker.js', {
-        scope: '/'
-      })
-      
-      console.log('Service Worker registered successfully:', registration.scope)
-      
-      // Set registration in notification service
-      notificationService.setServiceWorkerRegistration(registration)
-      
-      // Check for updates
-      registration.addEventListener('updatefound', () => {
-        const newWorker = registration.installing
-        console.log('New Service Worker found, installing...')
-        
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            console.log('New Service Worker installed, ready to activate')
-            // Optionally notify user about update
-          }
-        })
-      })
-      
-      // Handle controller change (when new SW activates)
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        console.log('Service Worker controller changed, reloading...')
-        window.location.reload()
-      })
-      
-    } catch (error) {
-      console.error('Service Worker registration failed:', error)
-    }
-  })
+  if (import.meta.env.PROD) {
+    // Service worker: notification display/clicks + offline support
+    window.addEventListener('load', async () => {
+      try {
+        const registration = await navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+        notificationService.setServiceWorkerRegistration(registration)
+      } catch (error) {
+        console.error('Service Worker registration failed:', error)
+      }
+    })
+  } else {
+    // In development a service worker would cache Vite's files; remove any left over
+    navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()))
+  }
 }

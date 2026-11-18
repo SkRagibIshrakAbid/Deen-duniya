@@ -1,217 +1,228 @@
 <template>
-  <Dialog 
-    v-model:visible="isVisible" 
-    modal 
-    :header="'Settings'" 
+  <Dialog
+    v-model:visible="isVisible"
+    modal
+    header="Settings"
     :style="{ width: '50rem' }"
-    :breakpoints="{ '960px': '75vw', '640px': '90vw' }"
+    :breakpoints="{ '960px': '75vw', '640px': '94vw' }"
   >
     <div class="settings-content">
-      <Accordion :multiple="true" :activeIndex="[0]">
+      <Accordion :value="['calc']" multiple>
         <!-- Prayer Calculation Settings -->
-        <AccordionTab header="Prayer Calculation">
-          <div class="settings-section">
-            <div class="setting-item">
-              <label for="calc-method">Calculation Method</label>
-              <Dropdown 
-                id="calc-method"
-                v-model="localSettings.calculationMethod" 
-                :options="settingsStore.calculationMethods" 
-                optionLabel="name"
-                optionValue="id"
-                placeholder="Select calculation method"
-                class="full-width"
-              />
-              <small>Different schools of thought use different calculation methods</small>
-            </div>
-
-            <div class="setting-item">
-              <label for="asr-calc">Asr Calculation</label>
-              <SelectButton 
-                id="asr-calc"
-                v-model="localSettings.asrCalculation" 
-                :options="asrOptions" 
-                optionLabel="label"
-                optionValue="value"
-                class="full-width"
-              />
-              <small>Shafi (standard) or Hanafi school</small>
-            </div>
-
-            <div class="setting-item">
-              <label for="hijri-adjust">Hijri Date Adjustment</label>
-              <Slider 
-                id="hijri-adjust"
-                v-model="localSettings.hijriAdjustment" 
-                :min="-2"
-                :max="2"
-                :step="1"
-                class="full-width"
-              />
-              <div class="adjustment-display">
-                <span>{{ localSettings.hijriAdjustment > 0 ? '+' : '' }}{{ localSettings.hijriAdjustment }} day{{ Math.abs(localSettings.hijriAdjustment) !== 1 ? 's' : '' }}</span>
+        <AccordionPanel value="calc">
+          <AccordionHeader>Prayer Calculation</AccordionHeader>
+          <AccordionContent>
+            <div class="settings-section">
+              <div class="setting-item">
+                <label for="calc-method">Calculation Method</label>
+                <Select
+                  inputId="calc-method"
+                  v-model="localSettings.calculationMethod"
+                  :options="settingsStore.calculationMethods"
+                  optionLabel="name"
+                  optionValue="id"
+                  placeholder="Select calculation method"
+                  class="full-width"
+                />
+                <small>Different authorities use different twilight angles for Fajr and Isha</small>
               </div>
-              <small>Adjust Hijri date based on local moon sighting (-2 to +2 days)</small>
+
+              <div class="setting-item">
+                <label for="asr-calc">Asr Calculation</label>
+                <SelectButton
+                  id="asr-calc"
+                  v-model="localSettings.asrCalculation"
+                  :options="asrOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  :allowEmpty="false"
+                  class="full-width"
+                />
+                <small>Shafi (standard) or Hanafi school</small>
+              </div>
+
+              <div class="setting-item">
+                <label for="hijri-adjust">Hijri Date Adjustment</label>
+                <Slider
+                  id="hijri-adjust"
+                  v-model="localSettings.hijriAdjustment"
+                  :min="-2"
+                  :max="2"
+                  :step="1"
+                  class="full-width"
+                />
+                <div class="adjustment-display">
+                  <span>{{ localSettings.hijriAdjustment > 0 ? '+' : '' }}{{ localSettings.hijriAdjustment }} day{{ Math.abs(localSettings.hijriAdjustment) !== 1 ? 's' : '' }}</span>
+                </div>
+                <small>Adjust the Hijri date to match local moon sighting (-2 to +2 days)</small>
+              </div>
             </div>
-          </div>
-        </AccordionTab>
+          </AccordionContent>
+        </AccordionPanel>
 
         <!-- Display Settings -->
-        <AccordionTab header="Display">
-          <div class="settings-section">
-            <div class="setting-item">
-              <label for="time-format">Time Format</label>
-              <SelectButton 
-                id="time-format"
-                v-model="localSettings.timeFormat" 
-                :options="timeFormatOptions" 
-                optionLabel="label"
-                optionValue="value"
-                class="full-width"
-              />
-            </div>
+        <AccordionPanel value="display">
+          <AccordionHeader>Display</AccordionHeader>
+          <AccordionContent>
+            <div class="settings-section">
+              <div class="setting-item">
+                <label for="time-format">Time Format</label>
+                <SelectButton
+                  id="time-format"
+                  v-model="localSettings.timeFormat"
+                  :options="timeFormatOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  :allowEmpty="false"
+                  class="full-width"
+                />
+              </div>
 
-            <div class="setting-item">
-              <label for="theme">Theme</label>
-              <SelectButton 
-                id="theme"
-                v-model="localSettings.theme" 
-                :options="themeOptions" 
-                optionLabel="label"
-                optionValue="value"
-                class="full-width"
-              />
-            </div>
+              <div class="setting-item">
+                <label for="theme">Theme</label>
+                <SelectButton
+                  id="theme"
+                  v-model="localSettings.theme"
+                  :options="themeOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  :allowEmpty="false"
+                  class="full-width"
+                />
+                <small>Auto follows your device's light/dark setting</small>
+              </div>
 
-            <div class="setting-item">
-              <label for="language">Language</label>
-              <Dropdown 
-                id="language"
-                v-model="localSettings.language" 
-                :options="languageOptions" 
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select language"
-                class="full-width"
-              />
-              <small>More languages coming soon</small>
+              <div class="setting-item">
+                <label for="language">Language</label>
+                <Select
+                  inputId="language"
+                  v-model="localSettings.language"
+                  :options="languageOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  optionDisabled="disabled"
+                  class="full-width"
+                />
+                <small>More languages coming soon</small>
+              </div>
             </div>
-          </div>
-        </AccordionTab>
+          </AccordionContent>
+        </AccordionPanel>
 
         <!-- Notification Settings -->
-        <AccordionTab header="Notifications">
-          <div class="settings-section">
-            <div class="setting-item">
-              <div class="setting-header">
-                <label>Enable Notifications</label>
-                <InputSwitch v-model="localSettings.notificationsEnabled" @change="handleNotificationToggle" />
-              </div>
-              <small>Receive browser notifications for prayer times</small>
-            </div>
-
-            <Divider />
-
-            <div v-if="localSettings.notificationsEnabled" class="notification-settings">
+        <AccordionPanel value="notifications">
+          <AccordionHeader>Notifications</AccordionHeader>
+          <AccordionContent>
+            <div class="settings-section">
               <div class="setting-item">
                 <div class="setting-header">
-                  <label>Notify Before Prayer</label>
-                  <InputSwitch v-model="localSettings.notifyBeforePrayer" />
-                </div>
-                <div v-if="localSettings.notifyBeforePrayer" class="sub-setting">
-                  <label for="before-minutes">Minutes before:</label>
-                  <InputNumber 
-                    id="before-minutes"
-                    v-model="localSettings.notifyBeforeMinutes" 
-                    :min="1" 
-                    :max="60"
-                    showButtons
-                    class="compact-input"
+                  <label for="notif-enabled">Enable Notifications</label>
+                  <ToggleSwitch
+                    inputId="notif-enabled"
+                    v-model="localSettings.notificationsEnabled"
+                    @update:modelValue="handleNotificationToggle"
                   />
                 </div>
+                <small>Reminders appear while Deen Duniya is open in a browser tab or installed as an app.</small>
+                <Message v-if="permissionMessage" severity="warn" :closable="false">{{ permissionMessage }}</Message>
               </div>
 
-              <div class="setting-item">
-                <div class="setting-header">
-                  <label>Notify At Prayer Time</label>
-                  <InputSwitch v-model="localSettings.notifyAtPrayer" />
-                </div>
-              </div>
+              <div v-if="localSettings.notificationsEnabled" class="notification-settings">
+                <Divider />
 
-              <div class="setting-item">
-                <div class="setting-header">
-                  <label>Notify Before Prayer Ends</label>
-                  <InputSwitch v-model="localSettings.notifyPrayerEnd" />
+                <div class="setting-item">
+                  <div class="setting-header">
+                    <label>Notify Before Prayer</label>
+                    <ToggleSwitch v-model="localSettings.notifyBeforePrayer" />
+                  </div>
+                  <div v-if="localSettings.notifyBeforePrayer" class="sub-setting">
+                    <label for="before-minutes">Minutes before:</label>
+                    <InputNumber
+                      inputId="before-minutes"
+                      v-model="localSettings.notifyBeforeMinutes"
+                      :min="1"
+                      :max="60"
+                      showButtons
+                      class="compact-input"
+                    />
+                  </div>
                 </div>
-                <div v-if="localSettings.notifyPrayerEnd" class="sub-setting">
-                  <label for="end-minutes">Minutes before end:</label>
-                  <InputNumber 
-                    id="end-minutes"
-                    v-model="localSettings.notifyPrayerEndMinutes" 
-                    :min="1" 
-                    :max="60"
-                    showButtons
-                    class="compact-input"
-                  />
-                </div>
-              </div>
 
-              <Divider />
-
-              <div class="setting-item">
-                <label>Prayer-specific Notifications</label>
-                <div class="prayer-toggles">
-                  <div class="prayer-toggle">
-                    <label>Fajr</label>
-                    <InputSwitch v-model="localSettings.notifyFajr" />
-                  </div>
-                  <div class="prayer-toggle">
-                    <label>Dhuhr</label>
-                    <InputSwitch v-model="localSettings.notifyDhuhr" />
-                  </div>
-                  <div class="prayer-toggle">
-                    <label>Asr</label>
-                    <InputSwitch v-model="localSettings.notifyAsr" />
-                  </div>
-                  <div class="prayer-toggle">
-                    <label>Maghrib</label>
-                    <InputSwitch v-model="localSettings.notifyMaghrib" />
-                  </div>
-                  <div class="prayer-toggle">
-                    <label>Isha</label>
-                    <InputSwitch v-model="localSettings.notifyIsha" />
+                <div class="setting-item">
+                  <div class="setting-header">
+                    <label>Notify At Prayer Time</label>
+                    <ToggleSwitch v-model="localSettings.notifyAtPrayer" />
                   </div>
                 </div>
-              </div>
 
-              <Divider />
-
-              <div class="setting-item">
-                <div class="setting-header">
-                  <label>Ramadan Notifications</label>
-                  <InputSwitch v-model="localSettings.notifyRamadan" />
-                </div>
-                <div v-if="localSettings.notifyRamadan" class="ramadan-settings">
-                  <div class="sub-setting">
-                    <label>Sehri Reminders</label>
-                    <InputSwitch v-model="localSettings.notifyRamadanSehri" />
+                <div class="setting-item">
+                  <div class="setting-header">
+                    <label>Notify Before Prayer Time Ends</label>
+                    <ToggleSwitch v-model="localSettings.notifyPrayerEnd" />
                   </div>
-                  <div class="sub-setting">
-                    <label>Iftar Reminders</label>
-                    <InputSwitch v-model="localSettings.notifyRamadanIftar" />
+                  <div v-if="localSettings.notifyPrayerEnd" class="sub-setting">
+                    <label for="end-minutes">Minutes before end:</label>
+                    <InputNumber
+                      inputId="end-minutes"
+                      v-model="localSettings.notifyPrayerEndMinutes"
+                      :min="1"
+                      :max="60"
+                      showButtons
+                      class="compact-input"
+                    />
+                  </div>
+                  <small>Fajr ends at sunrise, Isha at Islamic midnight, others at the next prayer.</small>
+                </div>
+
+                <Divider />
+
+                <div class="setting-item">
+                  <label>Prayer-specific Notifications</label>
+                  <div class="prayer-toggles">
+                    <div v-for="name in prayerNames" :key="name" class="prayer-toggle">
+                      <label>{{ name }}</label>
+                      <ToggleSwitch v-model="localSettings[`notify${name}`]" />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div class="setting-item">
-                <div class="setting-header">
-                  <label>Notification Sound</label>
-                  <InputSwitch v-model="localSettings.notificationSound" />
+                <Divider />
+
+                <div class="setting-item">
+                  <div class="setting-header">
+                    <label>Ramadan Notifications</label>
+                    <ToggleSwitch v-model="localSettings.notifyRamadan" />
+                  </div>
+                  <div v-if="localSettings.notifyRamadan" class="ramadan-settings">
+                    <div class="sub-setting">
+                      <label>Sehri Reminders (15 min before and at the end)</label>
+                      <ToggleSwitch v-model="localSettings.notifyRamadanSehri" />
+                    </div>
+                    <div class="sub-setting">
+                      <label>Iftar Reminder (5 min before)</label>
+                      <ToggleSwitch v-model="localSettings.notifyRamadanIftar" />
+                    </div>
+                  </div>
                 </div>
+
+                <div class="setting-item">
+                  <div class="setting-header">
+                    <label>Notification Sound</label>
+                    <ToggleSwitch v-model="localSettings.notificationSound" />
+                  </div>
+                </div>
+
+                <Button
+                  label="Send test notification"
+                  icon="pi pi-send"
+                  size="small"
+                  outlined
+                  @click="sendTestNotification"
+                />
               </div>
             </div>
-          </div>
-        </AccordionTab>
+          </AccordionContent>
+        </AccordionPanel>
       </Accordion>
     </div>
 
@@ -225,17 +236,21 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useSettingsStore } from '../stores/settingsStore'
+import notificationService from '../services/notificationService'
 
 import Dialog from 'primevue/dialog'
 import Accordion from 'primevue/accordion'
-import AccordionTab from 'primevue/accordiontab'
-import Dropdown from 'primevue/dropdown'
+import AccordionPanel from 'primevue/accordionpanel'
+import AccordionHeader from 'primevue/accordionheader'
+import AccordionContent from 'primevue/accordioncontent'
+import Select from 'primevue/select'
 import SelectButton from 'primevue/selectbutton'
 import Slider from 'primevue/slider'
-import InputSwitch from 'primevue/inputswitch'
+import ToggleSwitch from 'primevue/toggleswitch'
 import InputNumber from 'primevue/inputnumber'
 import Button from 'primevue/button'
 import Divider from 'primevue/divider'
+import Message from 'primevue/message'
 
 const props = defineProps({
   visible: Boolean
@@ -245,35 +260,14 @@ const emit = defineEmits(['update:visible', 'settingsChanged'])
 
 const settingsStore = useSettingsStore()
 
-// State
 const isVisible = computed({
   get: () => props.visible,
   set: (value) => emit('update:visible', value)
 })
 
-const localSettings = ref({
-  calculationMethod: settingsStore.calculationMethod,
-  asrCalculation: settingsStore.asrCalculation,
-  hijriAdjustment: settingsStore.hijriAdjustment,
-  timeFormat: settingsStore.timeFormat,
-  language: settingsStore.language,
-  theme: settingsStore.theme,
-  notificationsEnabled: settingsStore.notificationsEnabled,
-  notifyBeforePrayer: settingsStore.notifyBeforePrayer,
-  notifyBeforeMinutes: settingsStore.notifyBeforeMinutes,
-  notifyAtPrayer: settingsStore.notifyAtPrayer,
-  notifyPrayerEnd: settingsStore.notifyPrayerEnd,
-  notifyPrayerEndMinutes: settingsStore.notifyPrayerEndMinutes,
-  notifyRamadan: settingsStore.notifyRamadan,
-  notifyRamadanSehri: settingsStore.notifyRamadanSehri,
-  notifyRamadanIftar: settingsStore.notifyRamadanIftar,
-  notificationSound: settingsStore.notificationSound,
-  notifyFajr: settingsStore.notifyFajr,
-  notifyDhuhr: settingsStore.notifyDhuhr,
-  notifyAsr: settingsStore.notifyAsr,
-  notifyMaghrib: settingsStore.notifyMaghrib,
-  notifyIsha: settingsStore.notifyIsha
-})
+const prayerNames = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
+const localSettings = ref(settingsStore.snapshot())
+const permissionMessage = ref('')
 
 // Options
 const asrOptions = [
@@ -297,57 +291,48 @@ const languageOptions = [
   { label: 'العربية (Coming Soon)', value: 'ar', disabled: true }
 ]
 
+const deniedText = (reason) =>
+  reason === 'unsupported'
+    ? 'This browser does not support notifications.'
+    : 'Notifications are blocked for this site. Allow them in your browser\'s site settings, then try again.'
+
 // Methods
-const handleNotificationToggle = async () => {
-  if (localSettings.value.notificationsEnabled) {
-    const granted = await settingsStore.requestNotificationPermission()
-    if (!granted) {
-      localSettings.value.notificationsEnabled = false
-    }
+const handleNotificationToggle = async (enabled) => {
+  permissionMessage.value = ''
+  if (!enabled) return
+  const granted = await settingsStore.requestNotificationPermission()
+  if (!granted) {
+    localSettings.value.notificationsEnabled = false
+    permissionMessage.value = deniedText(settingsStore.notificationPermission)
   }
 }
 
-const saveSettings = () => {
-  // Check if calculation settings changed (require prayer times refresh)
-  const needsRefresh = 
-    localSettings.value.calculationMethod !== settingsStore.calculationMethod ||
-    localSettings.value.asrCalculation !== settingsStore.asrCalculation ||
-    localSettings.value.hijriAdjustment !== settingsStore.hijriAdjustment
-  
-  // Save all settings
-  settingsStore.setCalculationMethod(localSettings.value.calculationMethod)
-  settingsStore.setAsrCalculation(localSettings.value.asrCalculation)
-  settingsStore.setHijriAdjustment(localSettings.value.hijriAdjustment)
-  settingsStore.setTimeFormat(localSettings.value.timeFormat)
-  settingsStore.setLanguage(localSettings.value.language)
-  settingsStore.setTheme(localSettings.value.theme)
-  
-  settingsStore.updateNotificationSettings({
-    notifyBeforePrayer: localSettings.value.notifyBeforePrayer,
-    notifyBeforeMinutes: localSettings.value.notifyBeforeMinutes,
-    notifyAtPrayer: localSettings.value.notifyAtPrayer,
-    notifyPrayerEnd: localSettings.value.notifyPrayerEnd,
-    notifyPrayerEndMinutes: localSettings.value.notifyPrayerEndMinutes,
-    notifyRamadan: localSettings.value.notifyRamadan,
-    notifyRamadanSehri: localSettings.value.notifyRamadanSehri,
-    notifyRamadanIftar: localSettings.value.notifyRamadanIftar,
-    notificationSound: localSettings.value.notificationSound,
-    notifyFajr: localSettings.value.notifyFajr,
-    notifyDhuhr: localSettings.value.notifyDhuhr,
-    notifyAsr: localSettings.value.notifyAsr,
-    notifyMaghrib: localSettings.value.notifyMaghrib,
-    notifyIsha: localSettings.value.notifyIsha
-  })
-  
-  if (localSettings.value.notificationsEnabled !== settingsStore.notificationsEnabled) {
-    settingsStore.toggleNotifications(localSettings.value.notificationsEnabled)
+const sendTestNotification = async () => {
+  const granted = await settingsStore.requestNotificationPermission()
+  if (!granted) {
+    permissionMessage.value = deniedText(settingsStore.notificationPermission)
+    return
   }
-  
-  // Refresh prayer times if calculation settings changed
-  if (needsRefresh) {
-    emit('settingsChanged')
+  notificationService.soundEnabled = localSettings.value.notificationSound
+  notificationService.showTestNotification()
+}
+
+const saveSettings = async () => {
+  const s = localSettings.value
+  const needsRefresh =
+    s.calculationMethod !== settingsStore.calculationMethod ||
+    s.asrCalculation !== settingsStore.asrCalculation ||
+    s.hijriAdjustment !== settingsStore.hijriAdjustment
+
+  const { notificationsEnabled, ...rest } = s
+  settingsStore.update(rest)
+
+  if (notificationsEnabled !== settingsStore.notificationsEnabled) {
+    await settingsStore.toggleNotifications(notificationsEnabled)
   }
-  
+
+  if (needsRefresh) emit('settingsChanged')
+
   closeDialog()
 }
 
@@ -355,32 +340,11 @@ const closeDialog = () => {
   isVisible.value = false
 }
 
-// Watch for dialog open to reset local settings
-watch(isVisible, (newVal) => {
-  if (newVal) {
-    localSettings.value = {
-      calculationMethod: settingsStore.calculationMethod,
-      asrCalculation: settingsStore.asrCalculation,
-      hijriAdjustment: settingsStore.hijriAdjustment,
-      timeFormat: settingsStore.timeFormat,
-      language: settingsStore.language,
-      theme: settingsStore.theme,
-      notificationsEnabled: settingsStore.notificationsEnabled,
-      notifyBeforePrayer: settingsStore.notifyBeforePrayer,
-      notifyBeforeMinutes: settingsStore.notifyBeforeMinutes,
-      notifyAtPrayer: settingsStore.notifyAtPrayer,
-      notifyPrayerEnd: settingsStore.notifyPrayerEnd,
-      notifyPrayerEndMinutes: settingsStore.notifyPrayerEndMinutes,
-      notifyRamadan: settingsStore.notifyRamadan,
-      notifyRamadanSehri: settingsStore.notifyRamadanSehri,
-      notifyRamadanIftar: settingsStore.notifyRamadanIftar,
-      notificationSound: settingsStore.notificationSound,
-      notifyFajr: settingsStore.notifyFajr,
-      notifyDhuhr: settingsStore.notifyDhuhr,
-      notifyAsr: settingsStore.notifyAsr,
-      notifyMaghrib: settingsStore.notifyMaghrib,
-      notifyIsha: settingsStore.notifyIsha
-    }
+// Load the current values every time the dialog opens (discarding cancelled edits)
+watch(isVisible, (open) => {
+  if (open) {
+    localSettings.value = settingsStore.snapshot()
+    permissionMessage.value = ''
   }
 })
 </script>

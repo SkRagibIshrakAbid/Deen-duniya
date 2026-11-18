@@ -35,8 +35,9 @@ The web application is actively under development and is functional with the fol
 - ✅ Core prayer times functionality
 - ✅ Islamic calendar with Hijri dates
 - ✅ Ramadan-specific features
-- ✅ Smart notifications system
-- ✅ Location management (GPS, cities, manual)
+- ✅ Smart notifications (fire while the app is open in a tab or installed as a PWA)
+- ✅ Location management (GPS with place name, worldwide city search, manual)
+- ✅ Correct times for cities in other timezones
 - ✅ Hijri date calibration for local moon sighting
 - ✅ Comprehensive settings and customization
 - ✅ Dark/Light theme support
@@ -69,8 +70,9 @@ Desktop application development will begin soon. The basic Electron setup is com
 
 ### 📍 Smart Location
 - **Auto-Detection**: GPS-based automatic location detection
-- **80+ Cities**: Pre-configured major cities worldwide
-- **Manual Entry**: Custom latitude/longitude coordinates
+- **Worldwide City Search**: Any city via Open-Meteo geocoding, with a built-in offline list
+- **Manual Entry**: Custom latitude/longitude coordinates with an optional name
+- **Timezone Aware**: Countdowns and reminders use the selected location's local time
 - **Persistent Storage**: Remembers your location
 
 ### 📅 Islamic Calendar
@@ -90,6 +92,8 @@ Desktop application development will begin soon. The basic Electron setup is com
 - **Ramadan Reminders**: Special Sehri and Iftar notifications
 - **Prayer-Specific**: Individual control for each prayer
 - **Customizable Timing**: Set custom reminder intervals
+- **Sound & Test**: Optional chime and a "Send test notification" button
+- **Note**: Browsers only deliver reminders while the app is open (tab or installed PWA). Alerts with the browser closed will come with the desktop app.
 
 ### 🎨 Customization
 - **Themes**: Light, Dark, and Auto modes
@@ -258,7 +262,7 @@ npm run dev
 - [x] Hijri date adjustment for local moon sighting
 - [x] First-time user onboarding (Location + Hijri Calibration + Notifications)
 - [x] Privacy-focused location handling
-- [ ] PWA (Progressive Web App) support
+- [x] PWA basics (installable, service worker, offline app shell)
 - [ ] Qibla direction finder
 - [ ] Prayer time history
 - [ ] Multiple language support

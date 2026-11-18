@@ -7,21 +7,28 @@
       </div>
     </template>
     <template #content>
-      <div v-if="isLoading" class="loading-state">
+      <div v-if="isLoading && !todayTimings" class="loading-state">
         <ProgressSpinner />
         <p>Loading prayer times...</p>
       </div>
 
-      <div v-else-if="error" class="error-state">
+      <div v-else-if="error && !todayTimings" class="error-state">
         <Message severity="error" :closable="false">{{ error }}</Message>
+        <Button label="Try again" icon="pi pi-refresh" size="small" outlined @click="refreshPrayerTimes" />
       </div>
 
       <div v-else-if="todayTimings" class="prayer-times">
+        <Message v-if="error" severity="warn" :closable="false" class="inline-warning">{{ error }}</Message>
+
         <!-- Current & Next Prayer Countdown -->
         <div v-if="nextPrayer" class="next-prayer-banner">
-          <div v-if="currentPrayer" class="current-prayer-section">
+          <div class="current-prayer-section">
             <span class="status-label">Current Prayer</span>
-            <div class="status-value">{{ currentPrayer.name }}</div>
+            <div class="status-value">{{ currentPrayer ? currentPrayer.name : '—' }}</div>
+            <span v-if="currentPrayer" class="status-time">
+              ends at {{ formatInstant(currentPrayer.end) }} · {{ formatDuration(currentPrayer.end - now) }} left
+            </span>
+            <span v-else class="status-time">No obligatory prayer in progress (after sunrise)</span>
           </div>
           
           <div class="next-prayer-row">
@@ -93,7 +100,7 @@
             outlined
           />
           <span v-if="lastUpdated" class="last-updated">
-            Updated: {{ lastUpdated.format('h:mm A') }}
+            Updated: {{ lastUpdated.format(timeFormat === '12' ? 'h:mm A' : 'HH:mm') }}
           </span>
         </div>
       </div>
@@ -101,18 +108,18 @@
       <div v-else class="empty-state">
         <i class="pi pi-map-marker" style="font-size: 3rem; color: var(--text-secondary);"></i>
         <p>Set your location to view prayer times</p>
-        <Button label="Set Location" @click="$emit('show-location-dialog')" />
+        <Button label="Set Location" @click="emit('show-location-dialog')" />
       </div>
     </template>
   </Card>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { usePrayerTimesStore } from '../stores/prayerTimesStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { formatTime, formatDuration } from '../utils/dateUtils'
-import dayjs from 'dayjs'
+import { useNow } from '../composables/useNow'
+import { formatTime, formatDuration, nowInTz } from '../utils/dateUtils'
 
 import Card from 'primevue/card'
 import ProgressSpinner from 'primevue/progressspinner'
@@ -122,13 +129,11 @@ import Button from 'primevue/button'
 import Tag from 'primevue/tag'
 import Divider from 'primevue/divider'
 
+const emit = defineEmits(['show-location-dialog'])
+
 const prayerTimesStore = usePrayerTimesStore()
 const settingsStore = useSettingsStore()
-
-// State
-const countdown = ref('--:--')
-const countdownProgress = ref(0)
-let countdownInterval = null
+const now = useNow()
 
 // Computed
 const isLoading = computed(() => prayerTimesStore.isLoading)
@@ -140,38 +145,25 @@ const prayerNames = computed(() => prayerTimesStore.prayerNames)
 const lastUpdated = computed(() => prayerTimesStore.lastUpdated)
 const timeFormat = computed(() => settingsStore.timeFormat)
 
-// Methods
-const updateCountdown = () => {
-  if (!nextPrayer.value) {
-    countdown.value = '--:--'
-    countdownProgress.value = 0
-    return
-  }
+const countdown = computed(() => {
+  if (!nextPrayer.value) return '--:--'
+  return formatDuration(nextPrayer.value.at - now.value)
+})
 
-  // Calculate time until next prayer fresh on every update
-  const now = dayjs()
-  const [hours, minutes] = nextPrayer.value.time.split(':')
-  let nextPrayerTime = now.clone().hour(parseInt(hours)).minute(parseInt(minutes)).second(0)
-  
-  // If prayer has passed today or is tomorrow's Fajr, add 1 day
-  if (nextPrayerTime.isBefore(now) || nextPrayer.value.isTomorrow) {
-    nextPrayerTime = nextPrayerTime.add(1, 'day')
-  }
-  
-  const msUntilNextPrayer = nextPrayerTime.diff(now)
-  countdown.value = formatDuration(msUntilNextPrayer)
-  
-  // Calculate progress (assuming total time until next prayer is from current prayer)
-  if (currentPrayer.value && todayTimings.value) {
-    const currentTime = dayjs(`${now.format('YYYY-MM-DD')} ${todayTimings.value[currentPrayer.value.name]}`, 'YYYY-MM-DD HH:mm')
-    
-    const total = nextPrayerTime.diff(currentTime)
-    const elapsed = now.diff(currentTime)
-    
-    if (total > 0) {
-      countdownProgress.value = Math.min(100, Math.max(0, (elapsed / total) * 100))
-    }
-  }
+// Progress from the start of the current window (or sunrise when no prayer is in progress)
+const countdownProgress = computed(() => {
+  if (!nextPrayer.value) return 0
+  const startMs = currentPrayer.value?.start ?? prayerTimesStore.instant('Sunrise')?.valueOf()
+  if (!startMs) return 0
+  const total = nextPrayer.value.at - startMs
+  if (total <= 0) return 0
+  return Math.min(100, Math.max(0, ((now.value - startMs) / total) * 100))
+})
+
+// Methods
+const formatInstant = (ms) => {
+  const t = nowInTz(prayerTimesStore.timezone, ms)
+  return t.format(timeFormat.value === '12' ? 'h:mm A' : 'HH:mm')
 }
 
 const refreshPrayerTimes = async () => {
@@ -179,13 +171,8 @@ const refreshPrayerTimes = async () => {
 }
 
 const isPrayerPassed = (prayerName) => {
-  if (!todayTimings.value || !todayTimings.value[prayerName]) return false
-  
-  const now = dayjs()
-  const [hours, minutes] = todayTimings.value[prayerName].split(':')
-  const prayerTime = dayjs().hour(parseInt(hours)).minute(parseInt(minutes)).second(0)
-  
-  return prayerTime.isBefore(now)
+  const at = prayerTimesStore.instant(prayerName)
+  return !!at && at.valueOf() <= now.value && currentPrayer.value?.name !== prayerName
 }
 
 const getPrayerIcon = (prayerName) => {
@@ -198,18 +185,6 @@ const getPrayerIcon = (prayerName) => {
   }
   return icons[prayerName] || 'pi pi-clock'
 }
-
-// Lifecycle
-onMounted(() => {
-  updateCountdown()
-  countdownInterval = setInterval(updateCountdown, 1000)
-})
-
-onUnmounted(() => {
-  if (countdownInterval) {
-    clearInterval(countdownInterval)
-  }
-})
 </script>
 
 <style scoped>
@@ -225,6 +200,10 @@ onUnmounted(() => {
   gap: 0.75rem;
   color: var(--primary-color);
   font-size: 1.5rem;
+}
+
+.inline-warning {
+  margin-bottom: 1rem;
 }
 
 .loading-state,

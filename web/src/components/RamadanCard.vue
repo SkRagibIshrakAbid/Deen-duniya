@@ -38,16 +38,16 @@
         <Divider />
         <div class="ramadan-stats">
           <div class="stat-card">
-            <span class="stat-label">Days Completed</span>
-            <span class="stat-value">{{ ramadanDay - 1 }}</span>
+            <span class="stat-label">Fasts Completed</span>
+            <span class="stat-value">{{ daysCompleted }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Days Remaining</span>
-            <span class="stat-value">{{ 30 - ramadanDay }}</span>
+            <span class="stat-value">{{ daysRemaining }}</span>
           </div>
           <div class="stat-card">
             <span class="stat-label">Progress</span>
-            <span class="stat-value">{{ ((ramadanDay / 30) * 100).toFixed(0) }}%</span>
+            <span class="stat-value">{{ progressPercent }}%</span>
           </div>
         </div>
 
@@ -65,11 +65,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed } from 'vue'
 import { usePrayerTimesStore } from '../stores/prayerTimesStore'
 import { useSettingsStore } from '../stores/settingsStore'
+import { useNow } from '../composables/useNow'
 import { formatTime, formatDetailedDuration } from '../utils/dateUtils'
-import dayjs from 'dayjs'
 
 import Card from 'primevue/card'
 import Panel from 'primevue/panel'
@@ -78,95 +78,53 @@ import Divider from 'primevue/divider'
 
 const prayerTimesStore = usePrayerTimesStore()
 const settingsStore = useSettingsStore()
+const now = useNow()
 
-// State
-const sehriCountdown = ref('')
-const iftarCountdown = ref('')
-const sehriPassed = ref(false)
-const iftarPassed = ref(false)
-const fastingProgress = ref(0)
-const isNextDaySehri = ref(false)
-let countdownInterval = null
-
-// Computed
 const sehriTime = computed(() => prayerTimesStore.sehriTime)
 const iftarTime = computed(() => prayerTimesStore.iftarTime)
 const ramadanDay = computed(() => prayerTimesStore.ramadanDay)
+const ramadanLength = computed(() => prayerTimesStore.ramadanLength)
 const timeFormat = computed(() => settingsStore.timeFormat)
 
-// Determine which section to show
-const showSehri = computed(() => {
-  const now = dayjs()
-  
-  if (!sehriTime.value || !iftarTime.value) return true
-  
-  const [sehriHours, sehriMinutes] = sehriTime.value.split(':')
-  const [iftarHours, iftarMinutes] = iftarTime.value.split(':')
-  
-  const sehriTimeObj = now.clone().hour(parseInt(sehriHours)).minute(parseInt(sehriMinutes)).second(0)
-  const iftarTimeObj = now.clone().hour(parseInt(iftarHours)).minute(parseInt(iftarMinutes)).second(0)
-  
-  // Before Sehri: Show Sehri
-  if (now.isBefore(sehriTimeObj)) {
-    return true
-  }
-  
-  // After Iftar: Show next day's Sehri
-  if (now.isAfter(iftarTimeObj)) {
-    return true
-  }
-  
-  // Between Sehri and Iftar: Show Iftar
-  return false
+const sehriToday = computed(() => prayerTimesStore.instant(prayerTimesStore.sehriName, 0)?.valueOf())
+const iftarToday = computed(() => prayerTimesStore.instant('Maghrib', 0)?.valueOf())
+
+// 'before-sehri' | 'fasting' | 'after-iftar'
+const phase = computed(() => {
+  if (!sehriToday.value || !iftarToday.value) return 'before-sehri'
+  if (now.value < sehriToday.value) return 'before-sehri'
+  if (now.value < iftarToday.value) return 'fasting'
+  return 'after-iftar'
 })
 
-// Methods
-const updateCountdowns = () => {
-  const now = dayjs()
-  
-  if (!sehriTime.value || !iftarTime.value) return
-  
-  const [sehriHours, sehriMinutes] = sehriTime.value.split(':')
-  const [iftarHours, iftarMinutes] = iftarTime.value.split(':')
-  
-  let sehriTimeObj = now.clone().hour(parseInt(sehriHours)).minute(parseInt(sehriMinutes)).second(0)
-  const iftarTimeObj = now.clone().hour(parseInt(iftarHours)).minute(parseInt(iftarMinutes)).second(0)
-  
-  // Check if we need to show next day's Sehri
-  if (now.isAfter(iftarTimeObj)) {
-    // After Iftar, show tomorrow's Sehri
-    sehriTimeObj = sehriTimeObj.add(1, 'day')
-    isNextDaySehri.value = true
-    sehriPassed.value = false
-    iftarPassed.value = true
-    
-    const msUntilSehri = sehriTimeObj.diff(now)
-    sehriCountdown.value = formatDetailedDuration(msUntilSehri)
-    fastingProgress.value = 0
-  } else if (now.isBefore(sehriTimeObj)) {
-    // Before Sehri, show today's Sehri
-    isNextDaySehri.value = false
-    sehriPassed.value = false
-    iftarPassed.value = false
-    
-    const msUntilSehri = sehriTimeObj.diff(now)
-    sehriCountdown.value = formatDetailedDuration(msUntilSehri)
-    fastingProgress.value = 0
-  } else {
-    // Between Sehri and Iftar, show Iftar countdown and fasting progress
-    isNextDaySehri.value = false
-    sehriPassed.value = true
-    iftarPassed.value = false
-    
-    const msUntilIftar = iftarTimeObj.diff(now)
-    iftarCountdown.value = formatDetailedDuration(msUntilIftar)
-    
-    // Calculate fasting progress
-    const totalFastingTime = iftarTimeObj.diff(sehriTimeObj)
-    const elapsedTime = now.diff(sehriTimeObj)
-    fastingProgress.value = Math.min(100, Math.max(0, (elapsedTime / totalFastingTime) * 100))
-  }
-}
+const showSehri = computed(() => phase.value !== 'fasting')
+const isNextDaySehri = computed(() => phase.value === 'after-iftar')
+
+const sehriCountdown = computed(() => {
+  const target = isNextDaySehri.value
+    ? prayerTimesStore.instant(prayerTimesStore.sehriName, 1)?.valueOf()
+    : sehriToday.value
+  return target ? formatDetailedDuration(target - now.value) : ''
+})
+
+const iftarCountdown = computed(() =>
+  iftarToday.value ? formatDetailedDuration(iftarToday.value - now.value) : ''
+)
+
+const fastingProgress = computed(() => {
+  if (phase.value !== 'fasting') return 0
+  const total = iftarToday.value - sehriToday.value
+  return Math.min(100, Math.max(0, ((now.value - sehriToday.value) / total) * 100))
+})
+
+// Fasts completed so far (today's fast counts once Iftar has passed)
+const daysCompleted = computed(() => {
+  if (!ramadanDay.value) return 0
+  const done = ramadanDay.value - 1 + (phase.value === 'after-iftar' ? 1 : 0)
+  return Math.min(ramadanLength.value, Math.max(0, done))
+})
+const daysRemaining = computed(() => Math.max(0, ramadanLength.value - daysCompleted.value))
+const progressPercent = computed(() => Math.round((daysCompleted.value / ramadanLength.value) * 100))
 
 const getRamadanMessage = () => {
   const messages = [
@@ -179,22 +137,9 @@ const getRamadanMessage = () => {
     'Charity given in Ramadan is especially blessed.',
     'Ramadan teaches patience, self-control, and empathy for the less fortunate.'
   ]
-  
-  // Return a consistent message based on the day of Ramadan
-  return messages[(ramadanDay.value - 1) % messages.length]
+  const day = Math.max(1, ramadanDay.value || 1)
+  return messages[(day - 1) % messages.length]
 }
-
-// Lifecycle
-onMounted(() => {
-  updateCountdowns()
-  countdownInterval = setInterval(updateCountdowns, 1000)
-})
-
-onUnmounted(() => {
-  if (countdownInterval) {
-    clearInterval(countdownInterval)
-  }
-})
 </script>
 
 <style scoped>

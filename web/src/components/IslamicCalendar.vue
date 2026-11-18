@@ -8,193 +8,189 @@
     </template>
     <template #content>
       <div class="calendar-controls">
-        <Button 
-          icon="pi pi-chevron-left" 
-          @click="previousMonth" 
-          outlined 
+        <Button
+          icon="pi pi-chevron-left"
+          @click="changeMonth(-1)"
+          outlined
           size="small"
+          aria-label="Previous month"
         />
         <div class="current-month">
-          <span class="hijri-month">{{ currentHijriMonth }}</span>
-          <span class="hijri-year">{{ currentHijriYear }} AH</span>
+          <span class="hijri-month">{{ gregorianLabel }}</span>
+          <span v-if="hijriRange" class="hijri-year">{{ hijriRange }}</span>
+          <Button
+            v-if="!isCurrentMonth"
+            label="Today"
+            icon="pi pi-calendar-clock"
+            size="small"
+            text
+            @click="goToToday"
+          />
         </div>
-        <Button 
-          icon="pi pi-chevron-right" 
-          @click="nextMonth" 
-          outlined 
+        <Button
+          icon="pi pi-chevron-right"
+          @click="changeMonth(1)"
+          outlined
           size="small"
+          aria-label="Next month"
         />
-      </div>
-
-      <DataView v-if="monthlyData.length > 0" :value="monthlyData" class="calendar-view">
-        <template #list="slotProps">
-          <div class="calendar-list">
-            <div 
-              v-for="(day, index) in slotProps.items"
-              :key="index"
-              class="calendar-day-item"
-              :class="{ 'today': isToday(day), 'friday': isFriday(day), 'holiday': hasHoliday(day) }"
-            >
-              <div class="day-header">
-                <div class="date-info">
-                  <span class="gregorian-date">{{ formatGregorianDate(day.date.gregorian) }}</span>
-                  <span class="hijri-date">{{ formatHijriDate(day.date.hijri) }}</span>
-                </div>
-                <div v-if="hasHoliday(day)" class="holiday-badge">
-                  <Tag :value="day.date.hijri.holidays[0]" severity="success" />
-                </div>
-                <div v-if="isFriday(day)" class="friday-badge">
-                  <Tag value="Jumu'ah" severity="info" />
-                </div>
-              </div>
-              
-              <Divider />
-              
-              <div class="prayer-times-compact">
-                <div class="prayer-time-item">
-                  <span class="prayer-label">Fajr</span>
-                  <span class="prayer-time">{{ formatTime(day.timings.Fajr, timeFormat) }}</span>
-                </div>
-                <div class="prayer-time-item">
-                  <span class="prayer-label">Dhuhr</span>
-                  <span class="prayer-time">{{ formatTime(day.timings.Dhuhr, timeFormat) }}</span>
-                </div>
-                <div class="prayer-time-item">
-                  <span class="prayer-label">Asr</span>
-                  <span class="prayer-time">{{ formatTime(day.timings.Asr, timeFormat) }}</span>
-                </div>
-                <div class="prayer-time-item">
-                  <span class="prayer-label">Maghrib</span>
-                  <span class="prayer-time">{{ formatTime(day.timings.Maghrib, timeFormat) }}</span>
-                </div>
-                <div class="prayer-time-item">
-                  <span class="prayer-label">Isha</span>
-                  <span class="prayer-time">{{ formatTime(day.timings.Isha, timeFormat) }}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </template>
-      </DataView>
-
-      <div v-else-if="!isLoading" class="empty-calendar">
-        <p>Select a month to view the Islamic calendar</p>
       </div>
 
       <div v-if="isLoading" class="loading-calendar">
         <ProgressSpinner />
         <p>Loading calendar...</p>
       </div>
+
+      <div v-else-if="calendarError" class="empty-calendar">
+        <Message severity="error" :closable="false">{{ calendarError }}</Message>
+        <Button label="Try again" icon="pi pi-refresh" size="small" outlined @click="fetchMonthlyCalendar" />
+      </div>
+
+      <div v-else-if="monthlyData.length > 0" ref="listEl" class="calendar-list">
+        <div
+          v-for="day in monthlyData"
+          :key="day.date.gregorian.date"
+          class="calendar-day-item"
+          :class="{ today: isToday(day), friday: isFriday(day), holiday: hasHoliday(day) }"
+          :data-today="isToday(day) || null"
+        >
+          <div class="day-header">
+            <div class="date-info">
+              <span class="gregorian-date">{{ formatGregorianDate(day.date.gregorian) }}</span>
+              <span class="hijri-date">{{ formatHijriDate(day.date.hijri) }}</span>
+            </div>
+            <div class="badges">
+              <Tag v-if="isToday(day)" value="Today" severity="success" />
+              <Tag
+                v-for="holiday in day.date.hijri.holidays || []"
+                :key="holiday"
+                :value="holiday"
+                severity="warn"
+              />
+              <Tag v-if="isFriday(day)" value="Jumu'ah" severity="info" />
+            </div>
+          </div>
+
+          <Divider />
+
+          <div class="prayer-times-compact">
+            <div v-for="name in prayerNames" :key="name" class="prayer-time-item">
+              <span class="prayer-label">{{ name }}</span>
+              <span class="prayer-time">{{ formatTime(day.timings[name], timeFormat) }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div v-else class="empty-calendar">
+        <p>Set your location to view the monthly calendar.</p>
+      </div>
     </template>
   </Card>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import dayjs from 'dayjs'
 import { usePrayerTimesStore } from '../stores/prayerTimesStore'
 import { useLocationStore } from '../stores/locationStore'
 import { useSettingsStore } from '../stores/settingsStore'
-import { formatTime } from '../utils/dateUtils'
-import dayjs from 'dayjs'
+import { formatTime, formatHijriDate, nowInTz, todayInTz } from '../utils/dateUtils'
 
 import Card from 'primevue/card'
 import Button from 'primevue/button'
-import DataView from 'primevue/dataview'
 import Divider from 'primevue/divider'
 import Tag from 'primevue/tag'
+import Message from 'primevue/message'
 import ProgressSpinner from 'primevue/progressspinner'
 
 const prayerTimesStore = usePrayerTimesStore()
 const locationStore = useLocationStore()
 const settingsStore = useSettingsStore()
 
+const today = () => nowInTz(prayerTimesStore.effectiveTimezone)
+
 // State
-const currentMonth = ref(dayjs().month() + 1) // 1-12
-const currentYear = ref(dayjs().year())
-const monthlyData = ref([])
-const isLoading = ref(false)
-const currentHijriMonth = ref('')
-const currentHijriYear = ref('')
+const currentMonth = ref(today().month() + 1) // 1-12
+const currentYear = ref(today().year())
+const listEl = ref(null)
 
 // Computed
 const timeFormat = computed(() => settingsStore.timeFormat)
+const monthlyData = computed(() => prayerTimesStore.monthlyTimings || [])
+const isLoading = computed(() => prayerTimesStore.calendarLoading)
+const calendarError = computed(() => prayerTimesStore.calendarError)
+const prayerNames = prayerTimesStore.prayerNames
+
+const gregorianLabel = computed(() =>
+  dayjs(`${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-01`).format('MMMM YYYY')
+)
+
+// A Gregorian month spans two (occasionally three) Hijri months
+const hijriRange = computed(() => {
+  if (!monthlyData.value.length) return ''
+  const first = monthlyData.value[0].date.hijri
+  const last = monthlyData.value[monthlyData.value.length - 1].date.hijri
+  if (first.month.number === last.month.number) return `${first.month.en} ${first.year} AH`
+  if (first.year === last.year) return `${first.month.en} – ${last.month.en} ${last.year} AH`
+  return `${first.month.en} ${first.year} – ${last.month.en} ${last.year} AH`
+})
+
+const isCurrentMonth = computed(() => {
+  const t = today()
+  return currentMonth.value === t.month() + 1 && currentYear.value === t.year()
+})
 
 // Methods
+const scrollToToday = async () => {
+  await nextTick()
+  const el = listEl.value?.querySelector('[data-today]')
+  if (el && listEl.value) {
+    listEl.value.scrollTo({ top: el.offsetTop - listEl.value.offsetTop, behavior: 'smooth' })
+  }
+}
+
 const fetchMonthlyCalendar = async () => {
   if (!locationStore.hasLocation) return
-  
-  isLoading.value = true
-  try {
-    await prayerTimesStore.fetchMonthlyCalendar(currentYear.value, currentMonth.value)
-    monthlyData.value = prayerTimesStore.monthlyTimings || []
-    
-    // Get Hijri month info from first day
-    if (monthlyData.value.length > 0) {
-      const firstDay = monthlyData.value[0]
-      currentHijriMonth.value = firstDay.date.hijri.month.en
-      currentHijriYear.value = firstDay.date.hijri.year
-    }
-  } catch (error) {
-    console.error('Error fetching monthly calendar:', error)
-  } finally {
-    isLoading.value = false
-  }
+  await prayerTimesStore.fetchMonthlyCalendar(currentYear.value, currentMonth.value)
+  if (isCurrentMonth.value) scrollToToday()
 }
 
-const previousMonth = () => {
-  if (currentMonth.value === 1) {
-    currentMonth.value = 12
-    currentYear.value--
-  } else {
-    currentMonth.value--
-  }
+const changeMonth = (delta) => {
+  const d = dayjs(`${currentYear.value}-${String(currentMonth.value).padStart(2, '0')}-01`).add(delta, 'month')
+  currentMonth.value = d.month() + 1
+  currentYear.value = d.year()
   fetchMonthlyCalendar()
 }
 
-const nextMonth = () => {
-  if (currentMonth.value === 12) {
-    currentMonth.value = 1
-    currentYear.value++
-  } else {
-    currentMonth.value++
-  }
+const goToToday = () => {
+  const t = today()
+  currentMonth.value = t.month() + 1
+  currentYear.value = t.year()
   fetchMonthlyCalendar()
 }
 
-const formatGregorianDate = (gregorian) => {
-  return `${gregorian.weekday.en}, ${gregorian.day} ${gregorian.month.en} ${gregorian.year}`
-}
+const formatGregorianDate = (gregorian) =>
+  `${gregorian.weekday.en}, ${gregorian.day} ${gregorian.month.en} ${gregorian.year}`
 
-const formatHijriDate = (hijri) => {
-  return `${hijri.day} ${hijri.month.en} ${hijri.year} AH`
-}
-
-const isToday = (day) => {
-  const today = dayjs().format('DD-MM-YYYY')
-  return day.date.gregorian.date === today
-}
-
-const isFriday = (day) => {
-  return day.date.gregorian.weekday.en === 'Friday'
-}
-
-const hasHoliday = (day) => {
-  return day.date.hijri.holidays && day.date.hijri.holidays.length > 0
-}
+const isToday = (day) => day.date.gregorian.date === todayInTz(prayerTimesStore.effectiveTimezone)
+const isFriday = (day) => day.date.gregorian.weekday.en === 'Friday'
+const hasHoliday = (day) => (day.date.hijri.holidays?.length || 0) > 0
 
 // Lifecycle
-onMounted(() => {
-  if (locationStore.hasLocation) {
-    fetchMonthlyCalendar()
-  }
-})
+onMounted(fetchMonthlyCalendar)
 
-// Watch for location changes
-watch(() => locationStore.hasLocation, (hasLocation) => {
-  if (hasLocation) {
-    fetchMonthlyCalendar()
-  }
-})
+// Refetch whenever the location or any calculation setting changes
+watch(
+  () => [
+    locationStore.latitude,
+    locationStore.longitude,
+    settingsStore.calculationMethod,
+    settingsStore.asrCalculation,
+    settingsStore.hijriAdjustment
+  ],
+  fetchMonthlyCalendar
+)
 </script>
 
 <style scoped>
@@ -240,7 +236,17 @@ watch(() => locationStore.hasLocation, (hasLocation) => {
   color: var(--text-secondary);
 }
 
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-left: auto;
+}
+
 .calendar-list {
+  max-height: 40rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
   display: flex;
   flex-direction: column;
   gap: 1rem;

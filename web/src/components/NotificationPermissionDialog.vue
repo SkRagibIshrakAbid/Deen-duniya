@@ -113,13 +113,13 @@ const enableNotifications = async () => {
   
   try {
     // Request notification permission
-    await settingsStore.toggleNotifications(true)
-    
+    const result = await settingsStore.toggleNotifications(true)
+
     // Mark as completed
     localStorage.setItem('notificationPromptShown', 'true')
-    
+
     // Close dialog
-    emit('completed', true)
+    emit('completed', result)
     isVisible.value = false
   } catch (error) {
     console.error('Failed to enable notifications:', error)
@@ -133,7 +133,7 @@ const skipNotifications = () => {
   // Mark as completed (user chose to skip)
   localStorage.setItem('notificationPromptShown', 'true')
   
-  emit('completed', false)
+  emit('completed', { enabled: false, skipped: true })
   isVisible.value = false
 }
 </script>
@@ -178,7 +178,7 @@ const skipNotifications = () => {
   align-items: flex-start;
   gap: 1rem;
   padding: 0.75rem;
-  background-color: var(--surface-ground);
+  background-color: var(--bg-color);
   border-radius: 0.5rem;
   border-left: 3px solid var(--primary-color);
 }
