@@ -9,7 +9,7 @@
  * Bump CACHE_VERSION when this file's caching logic changes.
  */
 
-const CACHE_VERSION = 'v2'
+const CACHE_VERSION = 'v3'
 const CACHE_NAME = `deen-duniya-${CACHE_VERSION}`
 const APP_SHELL = ['/', '/index.html', '/moon-favicon.svg', '/icon-192.svg', '/manifest.json']
 
@@ -50,8 +50,8 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  // Hashed build assets never change: cache first
-  if (url.pathname.startsWith('/assets/')) {
+  // Hashed build assets and Earth textures never change: cache first
+  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/textures/')) {
     event.respondWith(
       caches.match(request).then((cached) => {
         if (cached) return cached

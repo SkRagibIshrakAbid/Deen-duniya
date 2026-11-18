@@ -28,8 +28,23 @@
       "purpose": "any"
     }
   ],
-  "categories": ["lifestyle", "utilities"],
+  "categories": [
+    "lifestyle",
+    "utilities"
+  ],
   "shortcuts": [
+    {
+      "name": "Live Simulation",
+      "short_name": "Live",
+      "description": "Watch prayer times sweep across the Earth",
+      "url": "/#live",
+      "icons": [
+        {
+          "src": "/moon-favicon.svg",
+          "sizes": "96x96"
+        }
+      ]
+    },
     {
       "name": "Prayer Times",
       "short_name": "Prayer",

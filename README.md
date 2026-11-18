@@ -87,6 +87,14 @@ Desktop application development will begin soon. The basic Electron setup is com
 - **Ramadan Stats**: Day counter, completion percentage
 - **Special Notifications**: Ramadan-specific reminders
 
+### 🌍 Prayer Time Live Simulation (new)
+- **Live 3D Globe**: The real sun lights the Earth (day/night, city lights, clouds, atmosphere)
+- **Prayer Bands**: Coloured bands show where Fajr, Dhuhr, Asr, Maghrib and Isha are in progress right now. The bright edge is where each prayer is starting, and the colour fades toward where it ends
+- **Accurate**: Computed from solar geometry using your calculation method and Asr school (within ~2 minutes of AlAdhan)
+- **Time Controls**: Time-lapse speeds, Go Live, a time-of-day scrubber and a date picker to watch the seasons change
+- **Explore**: Hover or tap anywhere to see its current prayer; markers for your location and Makkah
+- **Shareable**: Open directly at `/#live`
+
 ### 🔔 Smart Notifications
 - **Prayer Alerts**: Configurable notifications before/during/after prayers
 - **Ramadan Reminders**: Special Sehri and Iftar notifications
@@ -263,6 +271,7 @@ npm run dev
 - [x] First-time user onboarding (Location + Hijri Calibration + Notifications)
 - [x] Privacy-focused location handling
 - [x] PWA basics (installable, service worker, offline app shell)
+- [x] Prayer time live simulation (3D globe)
 - [ ] Qibla direction finder
 - [ ] Prayer time history
 - [ ] Multiple language support

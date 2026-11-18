@@ -9,6 +9,17 @@
             <h1>Deen Duniya</h1>
           </div>
           <div class="header-actions">
+            <button
+              type="button"
+              class="live-sim-btn"
+              @click="openSimulation"
+              v-tooltip.bottom="'Prayer time live simulation'"
+              aria-label="Open prayer time live simulation"
+            >
+              <i class="pi pi-globe"></i>
+              <span class="live-sim-label">Live Simulation</span>
+              <span v-if="!liveSimSeen" class="new-badge">New</span>
+            </button>
             <Button
               :icon="notificationsEnabled ? 'pi pi-bell' : 'pi pi-bell-slash'"
               :severity="notificationsEnabled ? 'success' : 'secondary'"
@@ -76,6 +87,9 @@
           </button>
         </div>
 
+        <!-- New feature teaser -->
+        <LiveSimTeaser @open="openSimulation" />
+
         <!-- Prayer Times Card -->
         <PrayerTimesCard id="prayer-times" @show-location-dialog="showLocationDialog = true" />
 
@@ -98,12 +112,16 @@
       @completed="onNotificationPermissionCompleted"
     />
 
+    <LiveSimAnnouncement v-model:visible="showAnnouncement" @open="openSimulation" />
+
+    <LiveSimulation v-if="simOpen" @close="closeSimulation" />
+
     <Toast />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
 import { useToast } from 'primevue/usetoast'
 import { useLocationStore } from './stores/locationStore'
 import { usePrayerTimesStore } from './stores/prayerTimesStore'
@@ -124,6 +142,11 @@ import LocationDialog from './components/LocationDialog.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import HijriCalibrationDialog from './components/HijriCalibrationDialog.vue'
 import NotificationPermissionDialog from './components/NotificationPermissionDialog.vue'
+import LiveSimTeaser from './components/LiveSimTeaser.vue'
+import LiveSimAnnouncement from './components/LiveSimAnnouncement.vue'
+
+// The 3D simulation (and three.js) is only downloaded when it's opened
+const LiveSimulation = defineAsyncComponent(() => import('./components/LiveSimulation.vue'))
 
 // Stores
 const locationStore = useLocationStore()
@@ -195,7 +218,7 @@ const toggleNotifications = async () => {
 const checkNotificationPermissionPrompt = () => {
   if (localStorage.getItem('notificationPromptShown')) return
   setTimeout(() => {
-    showNotificationPermission.value = true
+    if (!simOpen.value) showNotificationPermission.value = true
   }, 500)
 }
 
@@ -215,7 +238,7 @@ const needsCalibration = () => prayerTimesStore.isRamadan && !localStorage.getIt
 const maybeShowCalibration = () => {
   if (needsCalibration() && !showLocationDialog.value) {
     setTimeout(() => {
-      showCalibrationDialog.value = true
+      if (!simOpen.value) showCalibrationDialog.value = true
     }, 500)
     return true
   }
@@ -258,9 +281,88 @@ watch(() => prayerTimesStore.isRamadan, (isRamadan) => {
   if (isRamadan) maybeShowCalibration()
 })
 
-// Manifest shortcuts: /#settings and /#prayer-times
+// ---------- live simulation ----------
+
+const simOpen = ref(false)
+const showAnnouncement = ref(false)
+const liveSimSeen = ref(localStorage.getItem('liveSimSeen') === 'true')
+
+let pushedLiveEntry = false
+
+const openSimulation = () => {
+  showAnnouncement.value = false
+  if (window.location.hash !== '#live') {
+    // push a history entry so the browser/phone Back button closes the simulation
+    history.pushState(null, '', '#live')
+    pushedLiveEntry = true
+  }
+  simOpen.value = true
+  liveSimSeen.value = true
+  try {
+    localStorage.setItem('liveSimSeen', 'true')
+    localStorage.setItem('liveSimAnnounced', 'true')
+  } catch {
+    /* ignore */
+  }
+}
+
+const closeSimulation = () => {
+  if (window.location.hash === '#live' && pushedLiveEntry) {
+    pushedLiveEntry = false
+    history.back() // handleHash closes it
+    return
+  }
+  // Opened from a direct /#live link: don't navigate away from the site
+  if (window.location.hash === '#live') {
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+  }
+  simOpen.value = false
+  afterSimulationClosed()
+}
+
+const afterSimulationClosed = () => {
+  // Resume any onboarding step that was held back while the simulation was open
+  if (!locationStore.hasLocation) {
+    setTimeout(() => {
+      showLocationDialog.value = true
+    }, 400)
+  } else if (!maybeShowCalibration()) {
+    checkNotificationPermissionPrompt()
+  }
+}
+
+// Show the one-time announcement once onboarding (location, calibration, notification prompt) is out of the way
+const maybeAnnounce = () => {
+  if (localStorage.getItem('liveSimAnnounced') || liveSimSeen.value) return
+  if (!locationStore.hasLocation || needsCalibration()) return
+  if (!localStorage.getItem('notificationPromptShown')) return
+  if (showLocationDialog.value || showCalibrationDialog.value || showNotificationPermission.value ||
+      showSettings.value || simOpen.value) return
+  showAnnouncement.value = true
+}
+
+watch(
+  () => [showLocationDialog.value, showCalibrationDialog.value, showNotificationPermission.value, showSettings.value],
+  (open) => {
+    if (open.some(Boolean)) return
+    setTimeout(maybeAnnounce, 1200)
+  }
+)
+
+// Hash routes: #live (simulation), plus manifest shortcuts #settings and #prayer-times
 const handleHash = () => {
   const hash = window.location.hash
+  if (hash === '#live') {
+    if (!simOpen.value) openSimulation()
+    return
+  }
+  // Leaving #live (Back button, link) closes the simulation
+  if (simOpen.value) {
+    simOpen.value = false
+    pushedLiveEntry = false
+    afterSimulationClosed()
+  }
+
   if (hash === '#settings') {
     showSettings.value = true
   } else if (hash === '#prayer-times') {
@@ -275,21 +377,24 @@ const handleHash = () => {
 onMounted(async () => {
   notificationService.start()
   window.addEventListener('hashchange', handleHash)
+  window.addEventListener('popstate', handleHash)
   handleHash()
 
   if (!locationStore.hasLocation) {
+    // A shared /#live link works without a location; ask for one when they come back
     setTimeout(() => {
-      showLocationDialog.value = true
+      if (!simOpen.value) showLocationDialog.value = true
     }, 800)
     return
   }
 
   await prayerTimesStore.loadFromLocalStorage()
-  maybeShowCalibration()
+  if (!maybeShowCalibration()) setTimeout(maybeAnnounce, 1500)
 })
 
 onUnmounted(() => {
   window.removeEventListener('hashchange', handleHash)
+  window.removeEventListener('popstate', handleHash)
 })
 </script>
 
@@ -369,6 +474,81 @@ onUnmounted(() => {
 .header-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+.live-sim-btn {
+  all: unset;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #fff;
+  background: linear-gradient(120deg, #0b1d36, #2c4a8a 55%, #5b3fa0);
+  box-shadow: 0 2px 10px rgba(44, 74, 138, 0.35);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.live-sim-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(91, 63, 160, 0.45);
+}
+
+.live-sim-btn:focus-visible {
+  outline: 2px solid var(--secondary-color);
+  outline-offset: 2px;
+}
+
+.live-sim-btn .pi-globe {
+  font-size: 1rem;
+}
+
+.new-badge {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.4rem;
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: #ef4444;
+  color: #fff;
+  animation: badge-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.6);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .new-badge {
+    animation: none;
+  }
+}
+
+.header-actions {
+  align-items: center;
+}
+
+@media (max-width: 560px) {
+  .live-sim-label {
+    display: none;
+  }
+
+  .live-sim-btn {
+    padding: 0.5rem;
+  }
 }
 
 .container {
