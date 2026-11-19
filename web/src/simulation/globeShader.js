@@ -168,18 +168,25 @@ export const earthFragment = /* glsl */ `
     fajr = min(fajr, 180.0);
     isha = min(isha, 180.0);
 
-    // Displayed boundaries. The intro fan squeezes every boundary toward uGatherH with one factor,
-    // which keeps their order (bands never cross); uSpread = 1 gives the true positions.
+    // Displayed band boundaries. Each band has a start and end in two layouts, blended by uSpread:
+    //   0 = intro bundle: five equal bands (7 deg) with equal gaps (4 deg), centred on the gather meridian
+    //   1 = true live positions
+    // Both layouts are ordered and share one blend factor, so bands never overlap or cross.
     float sp = clamp(uSpread, 0.0, 1.0);
-    float eF = uGatherH + (-fajr - uGatherH) * sp;       // Fajr starts
-    float eR = uGatherH + (-sunrise - uGatherH) * sp;    // sunrise
-    float eD = uGatherH + (0.0 - uGatherH) * sp;         // Dhuhr starts
-    float eA = uGatherH + (asr - uGatherH) * sp;         // Asr starts
-    float eS = uGatherH + (sunrise - uGatherH) * sp;     // sunset
-    float eM = uGatherH + (maghrib - uGatherH) * sp;     // Maghrib starts
-    float eI = uGatherH + (isha - uGatherH) * sp;        // Isha starts
-    float eNm = uGatherH + (-180.0 - uGatherH) * sp;     // Islamic midnight (west side)
-    float eNp = uGatherH + (180.0 - uGatherH) * sp;      // Islamic midnight (east side)
+    const float BW = 7.0;   // bundle band width (deg of hour angle)
+    const float BG = 4.0;   // bundle gap
+    float c0 = clamp(uGatherH, -154.5, 154.5) - 25.5;   // west end of the bundle (never crosses the midnight seam)
+    float eF  = mix(c0,                       -fajr,    sp);   // Fajr starts
+    float eR  = mix(c0 + BW,                  -sunrise, sp);   // Fajr ends (sunrise)
+    float eD  = mix(c0 + (BW + BG),           0.0,      sp);   // Dhuhr starts
+    float eDe = mix(c0 + (BW + BG) + BW,      asr,      sp);   // Dhuhr ends
+    float eA  = mix(c0 + 2.0 * (BW + BG),     asr,      sp);   // Asr starts
+    float eS  = mix(c0 + 2.0 * (BW + BG) + BW, sunrise, sp);   // Asr ends (sunset)
+    float eM  = mix(c0 + 3.0 * (BW + BG),     maghrib,  sp);   // Maghrib starts
+    float eMe = mix(c0 + 3.0 * (BW + BG) + BW, isha,    sp);   // Maghrib ends
+    float eI  = mix(c0 + 4.0 * (BW + BG),     isha,     sp);   // Isha starts
+    float eNp = mix(c0 + 4.0 * (BW + BG) + BW, 180.0,   sp);   // Isha ends (Islamic midnight, east)
+    float eNm = mix(c0,                       -180.0,   sp);   // late Isha starts (Islamic midnight, west)
 
     int band = -1;          // 0..4 prayer index
     float progress = 0.0;   // 0 at start edge, 1 at end edge
@@ -187,12 +194,12 @@ export const earthFragment = /* glsl */ `
 
     if (H >= eF && H < eR) {
       band = 0; progress = (H - eF) / max(eR - eF, 0.001);
-    } else if (H >= eD && H < eA) {
-      band = 1; progress = (H - eD) / max(eA - eD, 0.001);
+    } else if (H >= eD && H < eDe) {
+      band = 1; progress = (H - eD) / max(eDe - eD, 0.001);
     } else if (H >= eA && H < eS) {
       band = 2; progress = (H - eA) / max(eS - eA, 0.001);
-    } else if (H >= eM && H < eI) {
-      band = 3; progress = (H - eM) / max(eI - eM, 0.001);
+    } else if (H >= eM && H < eMe) {
+      band = 3; progress = (H - eM) / max(eMe - eM, 0.001);
     } else if (H >= eI && H < eNp) {
       band = 4; progress = (H - eI) / max(eNp - eI, 0.001);
     } else if (H >= eNm && H < eF) {

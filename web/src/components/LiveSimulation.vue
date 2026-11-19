@@ -470,14 +470,16 @@ const placeLabel = (el, lat, lon) => {
 
 // ---------- intro: bands are drawn as a closed fan at your meridian, then open to their live positions ----------
 //   0.0-2.2 s  camera flies in, no bands (clock is live throughout)
-//   1.6-3.2 s  a tight bundle of the five start lines is drawn pole to pole on the focus meridian
+//   1.6-3.2 s  a bundle of five equal bands (equal gaps) is drawn pole to pole on the focus meridian
 //   3.0-6.8 s  the fan opens: every edge glides to its true position now; names ride their lines
 //   5.8-6.8 s  dashed end lines and the panels fade in
 const INTRO_DRAW_AT = 1.6
 const INTRO_FAN_AT = 3.0
 const INTRO_FAN_DUR = 3.8
 const INTRO_END = INTRO_FAN_AT + INTRO_FAN_DUR
-const INTRO_SPREAD_MIN = 0.03 // bundle width: 3% of the full spread
+// Bundle layout (mirrors globeShader.js): five 7-deg bands with 4-deg gaps, centred on the focus meridian
+const BUNDLE_W = 7
+const BUNDLE_G = 4
 const INTRO_FULL_DRAW = 3 // seconds of draw clock at which every line is complete
 const SKIP_MS = 400
 
@@ -487,7 +489,7 @@ const livePulse = ref(false)
 const introLabelEls = ref([])
 let introT0 = 0
 let skip = null // { t0, draw, endLines, spread, labels } while finishing early
-let introState = { draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, labels: 0 }
+let introState = { draw: 0, endLines: 0, spread: 0, labels: 0 }
 
 const easeInOutSine = (u) => -(Math.cos(Math.PI * u) - 1) / 2
 const easeInOutCubic = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2)
@@ -505,8 +507,8 @@ const startIntro = () => {
   }
   intro.value = 'running'
   introT0 = performance.now()
-  introState = { draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, labels: 0 }
-  scene.setIntro({ draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, gatherLon: focus.value.lon })
+  introState = { draw: 0, endLines: 0, spread: 0, labels: 0 }
+  scene.setIntro({ draw: 0, endLines: 0, spread: 0, gatherLon: focus.value.lon })
 }
 
 const resetIntroUniforms = () => scene?.setIntro({ draw: 99, endLines: 1, spread: 1 })
@@ -540,19 +542,25 @@ const finishIntro = () => {
 // Intro labels sit on their (spreading) start line, at the focus latitude clamped to ±40°
 const introLabelLat = () => Math.max(-40, Math.min(40, focus.value?.lat ?? 20))
 
-const placeIntroLabels = (spread, alpha) => {
+const placeIntroLabels = (spread, draw, alpha) => {
   if (!scene?.subsolar) return
   const lat = introLabelLat()
   const e = eventAngles(lat, scene.subsolar.lat, params.value)
   const h0 = wrap180(focus.value.lon - scene.subsolar.lon)
+  const c0 = Math.max(-154.5, Math.min(154.5, h0)) - (5 * BUNDLE_W + 4 * BUNDLE_G) / 2
   const hs = [-e.fajr, 0, e.asr, e.maghrib, e.isha]
   hs.forEach((h, i) => {
     const el = introLabelEls.value[i]
     if (!el) return
-    const shown = h0 + (h - h0) * spread
+    // the label sits on its band's start line: bundle position -> true position
+    const bundle = c0 + i * (BUNDLE_W + BUNDLE_G)
+    const shown = bundle + (h - bundle) * spread
     const p = scene.project(lat, scene.subsolar.lon + shown)
+    // appear once that line has been drawn past the label
+    const t = (draw - i * 0.15) / 1.0
+    const a = clamp01((t - 0.35) / 0.3) * alpha
     el.style.transform = `translate(${p.x}px, ${p.y}px)`
-    el.style.opacity = p.visible ? String(alpha) : '0'
+    el.style.opacity = p.visible ? String(a) : '0'
   })
 }
 
@@ -561,9 +569,9 @@ const updateIntro = (now) => {
   const fanU = clamp01((e - INTRO_FAN_AT) / INTRO_FAN_DUR)
   let draw = Math.max(0, e - INTRO_DRAW_AT)
   let endLines = clamp01((e - (INTRO_END - 1.0)) / 1.0)
-  let spread = INTRO_SPREAD_MIN + (1 - INTRO_SPREAD_MIN) * easeInOutCubic(fanU)
-  // names appear once the fan has opened a little (so they don't stack), fade before it settles
-  let labels = clamp01((fanU - 0.08) / 0.15) * (1 - clamp01((e - (INTRO_END - 0.8)) / 0.8))
+  let spread = easeInOutCubic(fanU)
+  // names show as their lines are drawn, then fade before the fan settles
+  let labels = 1 - clamp01((e - (INTRO_END - 0.8)) / 0.8)
   if (skip) {
     const k = clamp01((now - skip.t0) / SKIP_MS)
     const s = easeInOutSine(k)
@@ -582,7 +590,7 @@ const updateIntro = (now) => {
   introState = { draw, endLines, spread, labels }
   if (e >= INTRO_END - 1.0) uiShown.value = true
   scene.setIntro({ draw, endLines, spread })
-  placeIntroLabels(spread, labels)
+  placeIntroLabels(spread, draw, labels)
 }
 
 const onFrame = () => {
