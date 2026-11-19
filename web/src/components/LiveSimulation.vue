@@ -470,16 +470,15 @@ const placeLabel = (el, lat, lon) => {
 
 // ---------- intro: bands are drawn as a closed fan at your meridian, then open to their live positions ----------
 //   0.0-2.2 s  camera flies in, no bands (clock is live throughout)
-//   1.6-3.2 s  a bundle of five equal bands (equal gaps) is drawn pole to pole on the focus meridian
+//   1.6-3.2 s  a bundle of five evenly spaced, connected bands is drawn pole to pole on the focus meridian
 //   3.0-6.8 s  the fan opens: every edge glides to its true position now; names ride their lines
 //   5.8-6.8 s  dashed end lines and the panels fade in
 const INTRO_DRAW_AT = 1.6
 const INTRO_FAN_AT = 3.0
 const INTRO_FAN_DUR = 3.8
 const INTRO_END = INTRO_FAN_AT + INTRO_FAN_DUR
-// Bundle layout (mirrors globeShader.js): five 7-deg bands with 4-deg gaps, centred on the focus meridian
-const BUNDLE_W = 7
-const BUNDLE_G = 4
+// Bundle layout (mirrors globeShader.js): start lines 11 deg apart, each band fading up to the next
+const BUNDLE_S = 11
 const INTRO_FULL_DRAW = 3 // seconds of draw clock at which every line is complete
 const SKIP_MS = 400
 
@@ -547,13 +546,13 @@ const placeIntroLabels = (spread, draw, alpha) => {
   const lat = introLabelLat()
   const e = eventAngles(lat, scene.subsolar.lat, params.value)
   const h0 = wrap180(focus.value.lon - scene.subsolar.lon)
-  const c0 = Math.max(-154.5, Math.min(154.5, h0)) - (5 * BUNDLE_W + 4 * BUNDLE_G) / 2
+  const c0 = Math.max(-152.5, Math.min(152.5, h0)) - (5 * BUNDLE_S) / 2
   const hs = [-e.fajr, 0, e.asr, e.maghrib, e.isha]
   hs.forEach((h, i) => {
     const el = introLabelEls.value[i]
     if (!el) return
     // the label sits on its band's start line: bundle position -> true position
-    const bundle = c0 + i * (BUNDLE_W + BUNDLE_G)
+    const bundle = c0 + i * BUNDLE_S
     const shown = bundle + (h - bundle) * spread
     const p = scene.project(lat, scene.subsolar.lon + shown)
     // appear once that line has been drawn past the label

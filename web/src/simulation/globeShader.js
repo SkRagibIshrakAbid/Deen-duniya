@@ -169,24 +169,24 @@ export const earthFragment = /* glsl */ `
     isha = min(isha, 180.0);
 
     // Displayed band boundaries. Each band has a start and end in two layouts, blended by uSpread:
-    //   0 = intro bundle: five equal bands (7 deg) with equal gaps (4 deg), centred on the gather meridian
+    //   0 = intro bundle: five bands with evenly spaced start lines (11 deg apart), each fading
+    //       right up to the next band's start line, centred on the gather meridian
     //   1 = true live positions
     // Both layouts are ordered and share one blend factor, so bands never overlap or cross.
     float sp = clamp(uSpread, 0.0, 1.0);
-    const float BW = 7.0;   // bundle band width (deg of hour angle)
-    const float BG = 4.0;   // bundle gap
-    float c0 = clamp(uGatherH, -154.5, 154.5) - 25.5;   // west end of the bundle (never crosses the midnight seam)
-    float eF  = mix(c0,                       -fajr,    sp);   // Fajr starts
-    float eR  = mix(c0 + BW,                  -sunrise, sp);   // Fajr ends (sunrise)
-    float eD  = mix(c0 + (BW + BG),           0.0,      sp);   // Dhuhr starts
-    float eDe = mix(c0 + (BW + BG) + BW,      asr,      sp);   // Dhuhr ends
-    float eA  = mix(c0 + 2.0 * (BW + BG),     asr,      sp);   // Asr starts
-    float eS  = mix(c0 + 2.0 * (BW + BG) + BW, sunrise, sp);   // Asr ends (sunset)
-    float eM  = mix(c0 + 3.0 * (BW + BG),     maghrib,  sp);   // Maghrib starts
-    float eMe = mix(c0 + 3.0 * (BW + BG) + BW, isha,    sp);   // Maghrib ends
-    float eI  = mix(c0 + 4.0 * (BW + BG),     isha,     sp);   // Isha starts
-    float eNp = mix(c0 + 4.0 * (BW + BG) + BW, 180.0,   sp);   // Isha ends (Islamic midnight, east)
-    float eNm = mix(c0,                       -180.0,   sp);   // late Isha starts (Islamic midnight, west)
+    const float BS = 11.0;  // bundle spacing between start lines (deg of hour angle)
+    float c0 = clamp(uGatherH, -152.5, 152.5) - 27.5;   // west end of the bundle (never crosses the midnight seam)
+    float eF  = mix(c0,             -fajr,    sp);   // Fajr starts
+    float eR  = mix(c0 + BS,        -sunrise, sp);   // Fajr ends (sunrise)
+    float eD  = mix(c0 + BS,        0.0,      sp);   // Dhuhr starts
+    float eDe = mix(c0 + 2.0 * BS,  asr,      sp);   // Dhuhr ends
+    float eA  = mix(c0 + 2.0 * BS,  asr,      sp);   // Asr starts
+    float eS  = mix(c0 + 3.0 * BS,  sunrise,  sp);   // Asr ends (sunset)
+    float eM  = mix(c0 + 3.0 * BS,  maghrib,  sp);   // Maghrib starts
+    float eMe = mix(c0 + 4.0 * BS,  isha,     sp);   // Maghrib ends
+    float eI  = mix(c0 + 4.0 * BS,  isha,     sp);   // Isha starts
+    float eNp = mix(c0 + 5.0 * BS,  180.0,    sp);   // Isha ends (Islamic midnight, east)
+    float eNm = mix(c0,             -180.0,   sp);   // late Isha starts (Islamic midnight, west)
 
     int band = -1;          // 0..4 prayer index
     float progress = 0.0;   // 0 at start edge, 1 at end edge
