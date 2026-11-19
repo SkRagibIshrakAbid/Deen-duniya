@@ -186,7 +186,9 @@ export const earthFragment = /* glsl */ `
     float eMe = mix(c0 + 4.0 * BS,  isha,     sp);   // Maghrib ends
     float eI  = mix(c0 + 4.0 * BS,  isha,     sp);   // Isha starts
     float eNp = mix(c0 + 5.0 * BS,  180.0,    sp);   // Isha ends (Islamic midnight, east)
-    float eNm = mix(c0,             -180.0,   sp);   // late Isha starts (Islamic midnight, west)
+    // Isha after midnight continues east from the Isha band, past +180 (wrapping round to Fajr):
+    // counted in "east-continued" hour angle, true range [180, 360 - Fajr], zero width in the bundle
+    float eLe = mix(c0 + 5.0 * BS,  360.0 - fajr, sp);   // late Isha ends (Fajr starts)
 
     int band = -1;          // 0..4 prayer index
     float progress = 0.0;   // 0 at start edge, 1 at end edge
@@ -202,8 +204,11 @@ export const earthFragment = /* glsl */ `
       band = 3; progress = (H - eM) / max(eMe - eM, 0.001);
     } else if (H >= eI && H < eNp) {
       band = 4; progress = (H - eI) / max(eNp - eI, 0.001);
-    } else if (H >= eNm && H < eF) {
-      band = 4; late = 1.0; progress = (H - eNm) / max(eF - eNm, 0.001);
+    } else {
+      float hx = H >= eNp ? H : H + 360.0;
+      if (hx >= eNp && hx < eLe) {
+        band = 4; late = 1.0; progress = (hx - eNp) / max(eLe - eNp, 0.001);
+      }
     }
 
     vec3 col = toSRGB(base); // uColors are sRGB
@@ -260,7 +265,7 @@ export const earthFragment = /* glsl */ `
       float dash = step(0.45, fract(latTrue / 1.6));
       float lR = line(abs(wrap180(H - eR)) * k, 1.4, px);
       float lS = line(abs(wrap180(H - eS)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
-      float lN = max(line(abs(wrap180(H - eNp)) * k, 1.4, px), line(abs(wrap180(H - eNm)) * k, 1.4, px));
+      float lN = line(abs(wrap180(H - eNp)) * k, 1.4, px);
       col = mix(col, vec3(1.0), clamp(lR + lS + lN, 0.0, 1.0) * dash * 0.6 * uBands * uEndLines);
     }
 
