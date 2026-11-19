@@ -1,5 +1,15 @@
 <template>
-  <div class="live-sim" role="dialog" aria-label="Prayer time live simulation" @keydown="onKey" tabindex="-1" ref="rootEl">
+  <div
+    class="live-sim"
+    :class="{ 'ui-hidden': !uiShown }"
+    role="dialog"
+    aria-label="Prayer time live simulation"
+    @keydown="onKey"
+    @pointerdown.capture="skipIntro"
+    @wheel.capture.passive="skipIntro"
+    tabindex="-1"
+    ref="rootEl"
+  >
     <!-- Globe canvas -->
     <div
       ref="canvasEl"
@@ -18,6 +28,20 @@
     <div ref="meccaLabelEl" class="marker-label mecca">
       <i class="pi pi-star-fill"></i> Makkah
     </div>
+
+    <!-- Intro: prayer names appear beside each line as it is drawn -->
+    <template v-if="intro === 'running'">
+      <div
+        v-for="(p, name, i) in PRAYERS"
+        :key="name"
+        :ref="(el) => (introLabelEls[i] = el)"
+        class="intro-label"
+        :style="{ color: p.color }"
+        aria-hidden="true"
+      >
+        {{ name }}
+      </div>
+    </template>
 
     <!-- Hover tooltip -->
     <div v-if="hover && hoverInfo" class="hover-tip" :style="{ left: hover.x + 'px', top: hover.y + 'px' }">
@@ -46,7 +70,7 @@
         <span class="title-main">Prayer Times · Live</span>
         <span class="title-sub">{{ methodName }} · {{ asrName }} Asr</span>
       </div>
-      <div class="top-actions">
+      <div class="top-actions fade-panel" style="--d: 0ms">
         <span ref="guideBtnEl" class="guide-btn-wrap">
           <Button
             icon="pi pi-question-circle"
@@ -62,7 +86,7 @@
     </header>
 
     <!-- Legend -->
-    <aside ref="legendEl" class="legend glass" :class="{ collapsed: legendCollapsed }">
+    <aside ref="legendEl" class="legend glass fade-panel" style="--d: 150ms" :class="{ collapsed: legendCollapsed }">
       <button type="button" class="legend-toggle" @click="legendCollapsed = !legendCollapsed">
         <span>Legend</span>
         <i :class="legendCollapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'"></i>
@@ -90,7 +114,7 @@
     </aside>
 
     <!-- Readout -->
-    <section v-if="focusInfo" ref="readoutEl" class="readout glass">
+    <section v-if="focusInfo" ref="readoutEl" class="readout glass fade-panel" style="--d: 300ms">
       <div class="readout-place">
         <i :class="focus.kind === 'user' ? 'pi pi-map-marker' : 'pi pi-compass'"></i>
         {{ focus.name }}
@@ -105,7 +129,7 @@
     </section>
 
     <!-- Time dock -->
-    <footer ref="dockEl" class="time-dock glass">
+    <footer ref="dockEl" class="time-dock glass fade-panel" style="--d: 450ms">
       <div class="dock-row">
         <Button
           :icon="playing ? 'pi pi-pause' : 'pi pi-play'"
@@ -121,7 +145,7 @@
         <button
           type="button"
           class="live-chip"
-          :class="{ active: isLive }"
+          :class="{ active: isLive && intro === 'done', pulse: livePulse }"
           @click="goLive"
           :title="isLive ? 'Showing the real current moment' : 'Jump to now at real speed'"
         >
@@ -202,7 +226,7 @@ import { useLocationStore } from '../stores/locationStore'
 import { useSettingsStore } from '../stores/settingsStore'
 import { usePrayerTimesStore } from '../stores/prayerTimesStore'
 import { GlobeScene, isWebGLAvailable } from '../simulation/GlobeScene'
-import { prayerAt, resolveParams, PRAYERS } from '../simulation/solar'
+import { prayerAt, resolveParams, eventAngles, PRAYERS } from '../simulation/solar'
 import { nowInTz, browserTimezone } from '../utils/dateUtils'
 import dayjs from 'dayjs'
 
@@ -340,6 +364,10 @@ const setSpeed = (s) => {
 }
 
 const goLive = () => {
+  if (intro.value === 'running') {
+    skipIntro()
+    return
+  }
   scene?.resetFollow()
   simMs = Date.now()
   simTick.value = simMs
@@ -349,6 +377,7 @@ const goLive = () => {
 }
 
 const setSimTime = (ms) => {
+  if (intro.value === 'running') endIntroNow()
   scene?.resetFollow()
   simMs = ms
   simTick.value = ms
@@ -377,6 +406,12 @@ const onDateChange = (e) => {
 const close = () => emit('close')
 
 const onKey = (e) => {
+  if (intro.value === 'running') {
+    // any key during the intro just skips it (Esc must not close the view yet)
+    skipIntro()
+    if (e.key === 'Escape' || e.key === ' ') e.preventDefault()
+    return
+  }
   if (showGuide.value || e.target instanceof HTMLInputElement) return
   if (e.key === 'Escape' && !showAbout.value) close()
   if (e.key === ' ') {
@@ -403,6 +438,11 @@ const onPointerMove = (e) => {
 
 const onPointerDown = (e) => {
   hover.value = null
+  // a tap that skips the intro shouldn't also select a place
+  if (intro.value === 'running') {
+    downAt = null
+    return
+  }
   downAt = { x: e.clientX, y: e.clientY, t: performance.now() }
 }
 
@@ -428,6 +468,132 @@ const placeLabel = (el, lat, lon) => {
   el.style.opacity = p.visible ? '1' : '0'
 }
 
+// ---------- intro: bands are drawn, then time glides into live ----------
+//   0.0-2.2 s  camera flies in, no bands, clock 3 h in the past
+//   1.6-4.6 s  start lines drawn pole to pole (Fajr..Isha, 0.45 s apart), colour washes in behind
+//   4.6-7.6 s  clock glides from now-3h to now and settles; UI fades in
+const INTRO_DRAW_AT = 1.6
+const INTRO_SETTLE_AT = 4.6
+const INTRO_SETTLE_DUR = 3.0
+const INTRO_END = INTRO_SETTLE_AT + INTRO_SETTLE_DUR
+const INTRO_GLIDE_MS = 3 * 3600 * 1000
+const INTRO_FULL_DRAW = 6 // seconds of draw clock at which every band is complete
+const SKIP_MS = 400
+
+const intro = ref('pending') // 'pending' | 'running' | 'done'
+const uiShown = ref(false)
+const livePulse = ref(false)
+const introLabelEls = ref([])
+let introT0 = 0
+let skip = null // { t0, draw, endLines, offset } while finishing early
+let introState = { draw: 0, endLines: 0, offset: INTRO_GLIDE_MS }
+
+const easeInOutSine = (u) => -(Math.cos(Math.PI * u) - 1) / 2
+const clamp01 = (x) => Math.min(1, Math.max(0, x))
+
+const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+
+const startIntro = () => {
+  const portrait = canvasEl.value.clientWidth < canvasEl.value.clientHeight
+  scene.focusOn(focus.value.lat, focus.value.lon, { distance: portrait ? 4.3 : 3.2, duration: 2200 })
+  if (reducedMotion) {
+    endIntroNow()
+    return
+  }
+  intro.value = 'running'
+  introT0 = performance.now()
+  introState = { draw: 0, endLines: 0, offset: INTRO_GLIDE_MS }
+  scene.setIntro({ draw: 0, endLines: 0 })
+  simMs = Date.now() - INTRO_GLIDE_MS
+  scene.setTime(new Date(simMs))
+}
+
+/** Finish immediately (a user picked a time, or reduced motion) */
+const endIntroNow = () => {
+  const wasRunning = intro.value === 'running'
+  intro.value = 'done'
+  skip = null
+  uiShown.value = true
+  scene?.setIntro({ draw: 99, endLines: 1 })
+  if (wasRunning) {
+    simMs = Date.now()
+    scene?.resetFollow()
+    scene?.setTime(new Date(simMs))
+  }
+  maybeAutoGuide()
+}
+
+/** Any interaction during the intro: glide to the final state over SKIP_MS */
+const skipIntro = () => {
+  if (intro.value !== 'running' || skip) return
+  skip = { t0: performance.now(), ...introState }
+  uiShown.value = true
+}
+
+const finishIntro = () => {
+  scene.setIntro({ draw: 99, endLines: 1 })
+  simMs = Date.now()
+  scene.resetFollow()
+  scene.setTime(new Date(simMs))
+  intro.value = 'done'
+  skip = null
+  uiShown.value = true
+  livePulse.value = true
+  setTimeout(() => (livePulse.value = false), 1800)
+  maybeAutoGuide()
+}
+
+// Start-edge hour angles at the label latitude, for the five intro labels
+const introLabelLat = () => Math.max(-40, Math.min(40, focus.value?.lat ?? 20))
+
+const placeIntroLabels = (draw, fadeAll) => {
+  if (!scene?.subsolar) return
+  const lat = introLabelLat()
+  const e = eventAngles(lat, scene.subsolar.lat, params.value)
+  const hs = [-e.fajr, 0, e.asr, e.maghrib, e.isha]
+  hs.forEach((h, i) => {
+    const el = introLabelEls.value[i]
+    if (!el) return
+    const p = scene.project(lat, scene.subsolar.lon + h)
+    // appear as the pen passes the label, hold, then fade
+    const t = (draw - i * 0.45) / 1.2
+    const a = clamp01((t - 0.15) / 0.2) * (1 - clamp01((t - 1.6) / 0.6)) * fadeAll
+    el.style.transform = `translate(${p.x}px, ${p.y}px)`
+    el.style.opacity = p.visible ? String(a) : '0'
+  })
+}
+
+const updateIntro = (now) => {
+  const e = (now - introT0) / 1000
+  let { draw, endLines, offset } = {
+    draw: Math.max(0, e - INTRO_DRAW_AT),
+    endLines: clamp01((e - (INTRO_SETTLE_AT - 0.4)) / 1.0),
+    offset: INTRO_GLIDE_MS * (1 - easeInOutSine(clamp01((e - INTRO_SETTLE_AT) / INTRO_SETTLE_DUR)))
+  }
+  let fadeAll = 1
+  if (skip) {
+    const k = clamp01((now - skip.t0) / SKIP_MS)
+    const s = easeInOutSine(k)
+    draw = skip.draw + (INTRO_FULL_DRAW - skip.draw) * s
+    endLines = skip.endLines + (1 - skip.endLines) * s
+    offset = skip.offset * (1 - s)
+    fadeAll = 1 - k
+    if (k >= 1) {
+      finishIntro()
+      return
+    }
+  } else if (e >= INTRO_END) {
+    finishIntro()
+    return
+  }
+  introState = { draw, endLines, offset }
+  if (e >= INTRO_SETTLE_AT) uiShown.value = true
+  scene.setIntro({ draw, endLines })
+  simMs = Date.now() - offset
+  scene.setTime(new Date(simMs))
+  placeIntroLabels(draw, fadeAll)
+}
+
 const onFrame = () => {
   const now = performance.now()
   const elapsed = (now - lastFrame) / 1000
@@ -436,7 +602,9 @@ const onFrame = () => {
   // time-lapse caps the step so a stall doesn't jump hours
   const dt = speed.value === 1 ? elapsed : Math.min(0.25, elapsed)
 
-  if (playing.value) {
+  if (intro.value === 'running') {
+    updateIntro(now)
+  } else if (playing.value) {
     simMs += dt * 1000 * speed.value
     // real-time mode stays locked to the wall clock
     if (speed.value === 1 && Math.abs(simMs - Date.now()) < 5000) simMs = Date.now()
@@ -552,7 +720,7 @@ onMounted(() => {
   scene = new GlobeScene(canvasEl.value, {
     onReady: () => {
       ready.value = true
-      maybeAutoGuide()
+      if (scene) startIntro() // the guide opens once the intro has finished
     }
   })
   scene.onFrame = onFrame
@@ -563,10 +731,10 @@ onMounted(() => {
   buildMarkers()
 
   resetFocus()
-  // start a little further out, then fly in
+  scene.flight = null
+  // start a little further out; the fly-in starts with the intro once textures are ready
   scene.camera.position.multiplyScalar(1.6)
-  const portrait = canvasEl.value.clientWidth < canvasEl.value.clientHeight
-  scene.focusOn(focus.value.lat, focus.value.lon, { distance: portrait ? 4.3 : 3.2, duration: 2200 })
+  scene.setIntro({ draw: 0, endLines: 0 })
 })
 
 onBeforeUnmount(() => {
@@ -585,6 +753,50 @@ watch(userPoint, () => {
 </script>
 
 <style scoped>
+/* ---------- intro ---------- */
+.fade-panel {
+  transition: opacity 0.9s ease, transform 0.9s ease;
+  transition-delay: var(--d, 0ms);
+}
+
+.ui-hidden .fade-panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ui-hidden .legend.fade-panel,
+.ui-hidden .readout.fade-panel {
+  transform: translateY(-8px);
+}
+
+.ui-hidden .time-dock.fade-panel {
+  transform: translate(-50%, 12px);
+}
+
+.intro-label {
+  position: absolute;
+  left: 0;
+  top: 0;
+  margin: -0.7rem 0 0 0.6rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 12px currentColor, 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  opacity: 0;
+  z-index: 3;
+  white-space: nowrap;
+}
+
+.live-chip.pulse {
+  animation: live-pulse 1.6s ease-out 1;
+}
+
+@keyframes live-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55); }
+  100% { box-shadow: 0 0 0 14px rgba(239, 68, 68, 0); }
+}
+
 .live-sim {
   position: fixed;
   inset: 0;

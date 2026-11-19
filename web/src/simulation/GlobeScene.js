@@ -122,6 +122,8 @@ export class GlobeScene {
       uBands: { value: 1 },
       uLights: { value: 1 },
       uTime: { value: 0 },
+      uIntro: { value: 99 }, // intro draw clock (s); large = fully drawn
+      uEndLines: { value: 1 },
       // sRGB components (the shader blends overlays in sRGB space)
       uColors: {
         value: Object.values(PRAYERS).map((p) => {
@@ -235,6 +237,12 @@ export class GlobeScene {
     if (bands !== undefined) this.targetBands = bands ? 1 : 0
     if (lights !== undefined) this.earthUniforms.uLights.value = lights ? 1 : 0
     if (clouds !== undefined) this.clouds.visible = clouds
+  }
+
+  /** Intro animation state: draw = seconds into the band drawing, endLines = 0..1 */
+  setIntro({ draw, endLines }) {
+    if (draw !== undefined) this.earthUniforms.uIntro.value = draw
+    if (endLines !== undefined) this.earthUniforms.uEndLines.value = endLines
   }
 
   setFollowSun(on) {

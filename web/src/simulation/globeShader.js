@@ -29,6 +29,8 @@ export const earthFragment = /* glsl */ `
   uniform float uBands;        // 0..1 overlay strength
   uniform float uLights;       // 0..1 city lights
   uniform float uTime;         // seconds, drives the edge shimmer
+  uniform float uIntro;        // intro draw clock in seconds (large = fully drawn)
+  uniform float uEndLines;     // 0..1 opacity of the dashed end lines (intro fade)
   uniform vec3 uColors[5];     // Fajr, Dhuhr, Asr, Maghrib, Isha
 
   varying vec3 vPos;
@@ -55,19 +57,51 @@ export const earthFragment = /* glsl */ `
     return 1.0 - smoothstep(width * px * 0.5, width * px * 0.5 + px, dist);
   }
 
+  // ---------- intro: each start line is drawn pole to pole, then its band washes in ----------
+  float easeInOut(float t) { return t * t * (3.0 - 2.0 * t); }
+
+  // 0..1 drawing progress of band i (Fajr 0 .. Isha 4), staggered 0.45 s, 1.2 s each
+  float introT(float i) { return clamp((uIntro - i * 0.45) / 1.2, 0.0, 1.0); }
+
+  // Latitude the pen has reached for band i (north to south)
+  float penLat(float i) { return 90.0 - 184.0 * easeInOut(introT(i)); }
+
+  // 1 where the line of band i has been drawn at this latitude
+  float revealAt(float i, float latTrue) {
+    float tip = penLat(i);
+    return smoothstep(tip - 1.5, tip + 1.5, latTrue);
+  }
+
+  // Fraction of band i's width (start edge -> end edge) that has washed in
+  float fillAt(float i) {
+    float t = introT(i);
+    return easeInOut(clamp((t - 0.25) / 0.75, 0.0, 1.0)) * 1.1;
+  }
+
   // Glowing start edge. d: signed arc distance (deg), positive inside the starting window
-  vec3 startEdge(vec3 col, float d, vec3 bc, float px, float shimmer) {
+  // reveal: 0..1 how much of the line is drawn here; tip: bright pen point while drawing
+  vec3 startEdge(vec3 col, float d, vec3 bc, float px, float shimmer, float reveal, float tip) {
     float ad = abs(d);
     if (ad > 40.0 * px) return col;   // cheap early-out far from the edge
+    float k = uBands * reveal;
     // faint dark seam just ahead of the edge (outgoing side) so it reads as a cut
     float seam = (1.0 - smoothstep(0.0, 2.0 * px, abs(d + 3.0 * px))) * step(d, 0.0);
-    col *= 1.0 - 0.35 * seam * uBands;
+    col *= 1.0 - 0.35 * seam * k;
     // soft halo on both sides
-    col += bc * exp(-ad / (7.0 * px)) * 0.45 * shimmer * uBands;
+    col += bc * exp(-ad / (7.0 * px)) * 0.45 * shimmer * k;
     // crisp core of warm light
     vec3 core = mix(bc, vec3(1.0, 0.965, 0.863), 0.55) * (0.9 + 0.25 * shimmer);
-    col = mix(col, core, line(ad, 2.6, px) * uBands);
+    col = mix(col, core, line(ad, 2.6, px) * k);
+    // the pen: a bright warm point at the drawing tip
+    col += mix(bc, vec3(1.0, 0.97, 0.9), 0.6) * exp(-ad / (5.0 * px)) * tip * 1.4 * uBands;
     return col;
+  }
+
+  float tipGlow(float i, float latTrue) {
+    float t = introT(i);
+    if (t <= 0.0 || t >= 1.0) return 0.0;
+    float dl = latTrue - penLat(i);
+    return exp(-dl * dl / 6.0) * smoothstep(0.0, 0.08, t) * (1.0 - smoothstep(0.85, 1.0, t));
   }
 
   void main() {
@@ -159,22 +193,27 @@ export const earthFragment = /* glsl */ `
       else if (band == 3) bc = uColors[3];
       else if (band == 4) bc = uColors[4];
       float p = clamp(progress, 0.0, 1.0);
+      // intro: the colour washes from the start edge toward the end, behind the drawn part of the line
+      float bi = float(band);
+      float f = fillAt(bi);
+      float wash = (1.0 - smoothstep(f - 0.08, f, p)) * revealAt(bi, latTrue);
       // Radar trail: solid just behind the leading (start) edge, fading toward the end
       float a = mix(0.6, 0.2, pow(p, 0.55));
       float sheen = exp(-p * 14.0) * 0.28;   // lit-from-within glow right behind the edge
       if (late > 0.5) { a = 0.16; sheen = 0.0; }
-      col = mix(col, bc, a * uBands);
+      float ub = uBands * wash;
+      col = mix(col, bc, a * ub);
       // add light (not just tint) so bands glow over dark ground at night
-      col += bc * (a * 0.3 * (1.0 - dayMix) + sheen) * uBands;
+      col += bc * (a * 0.3 * (1.0 - dayMix) + sheen) * ub;
       // gentle saturation lift inside the band
       float g = dot(col, vec3(0.299, 0.587, 0.114));
-      col = mix(col, g + (col - g) * 1.15, uBands);
+      col = mix(col, g + (col - g) * 1.15, ub);
     }
 
     // Light hatching where times are estimated (sun never sets / never rises, or barely clears the horizon)
     if (estimated > 0.5 && uBands > 0.0) {
       float stripe = step(0.5, fract((gl_FragCoord.x + gl_FragCoord.y) / 14.0));
-      col = mix(col, sameSide ? vec3(1.0, 0.9, 0.5) : vec3(0.45, 0.5, 0.9), stripe * 0.12 * uBands);
+      col = mix(col, sameSide ? vec3(1.0, 0.9, 0.5) : vec3(0.45, 0.5, 0.9), stripe * 0.12 * uBands * uEndLines);
     }
 
     // ---------- boundary lines ----------
@@ -189,18 +228,18 @@ export const earthFragment = /* glsl */ `
       float dA = wrap180(H - asr) * k;
       float dM = wrap180(H - maghrib) * k;
       float dI = wrap180(H - isha) * k;
-      col = startEdge(col, dF, uColors[0], px, shimmer);
-      col = startEdge(col, dD, uColors[1], px, shimmer);
-      col = startEdge(col, dA, uColors[2], px, shimmer);
-      col = startEdge(col, dM, uColors[3], px, shimmer);
-      col = startEdge(col, dI, uColors[4], px, shimmer);
+      col = startEdge(col, dF, uColors[0], px, shimmer, revealAt(0.0, latTrue), tipGlow(0.0, latTrue));
+      col = startEdge(col, dD, uColors[1], px, shimmer, revealAt(1.0, latTrue), tipGlow(1.0, latTrue));
+      col = startEdge(col, dA, uColors[2], px, shimmer, revealAt(2.0, latTrue), tipGlow(2.0, latTrue));
+      col = startEdge(col, dM, uColors[3], px, shimmer, revealAt(3.0, latTrue), tipGlow(3.0, latTrue));
+      col = startEdge(col, dI, uColors[4], px, shimmer, revealAt(4.0, latTrue), tipGlow(4.0, latTrue));
 
       // end-only edges (dashed white): sunrise, sunset, Islamic midnight
       float dash = step(0.45, fract(latTrue / 1.6));
       float lR = line(abs(wrap180(H + sunrise)) * k, 1.4, px);
       float lS = line(abs(wrap180(H - sunrise)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
       float lN = line(abs(wrap180(H - 180.0)) * k, 1.4, px);
-      col = mix(col, vec3(1.0), clamp(lR + lS + lN, 0.0, 1.0) * dash * 0.6 * uBands);
+      col = mix(col, vec3(1.0), clamp(lR + lS + lN, 0.0, 1.0) * dash * 0.6 * uBands * uEndLines);
     }
 
     gl_FragColor = vec4(toLinear(col), 1.0);
