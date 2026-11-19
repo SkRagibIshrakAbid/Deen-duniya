@@ -31,6 +31,8 @@ export const earthFragment = /* glsl */ `
   uniform float uTime;         // seconds, drives the edge shimmer
   uniform float uIntro;        // intro draw clock in seconds (large = fully drawn)
   uniform float uEndLines;     // 0..1 opacity of the dashed end lines (intro fade)
+  uniform float uSpread;       // intro fan: 0 = all edges gathered at uGatherH, 1 = true positions
+  uniform float uGatherH;      // hour angle (deg) of the meridian the fan opens from
   uniform vec3 uColors[5];     // Fajr, Dhuhr, Asr, Maghrib, Isha
 
   varying vec3 vPos;
@@ -60,8 +62,8 @@ export const earthFragment = /* glsl */ `
   // ---------- intro: each start line is drawn pole to pole, then its band washes in ----------
   float easeInOut(float t) { return t * t * (3.0 - 2.0 * t); }
 
-  // 0..1 drawing progress of band i (Fajr 0 .. Isha 4), staggered 0.45 s, 1.2 s each
-  float introT(float i) { return clamp((uIntro - i * 0.45) / 1.2, 0.0, 1.0); }
+  // 0..1 drawing progress of band i (Fajr 0 .. Isha 4), staggered 0.15 s, 1.0 s each
+  float introT(float i) { return clamp((uIntro - i * 0.15) / 1.0, 0.0, 1.0); }
 
   // Latitude the pen has reached for band i (north to south)
   float penLat(float i) { return 90.0 - 184.0 * easeInOut(introT(i)); }
@@ -75,7 +77,7 @@ export const earthFragment = /* glsl */ `
   // Fraction of band i's width (start edge -> end edge) that has washed in
   float fillAt(float i) {
     float t = introT(i);
-    return easeInOut(clamp((t - 0.25) / 0.75, 0.0, 1.0)) * 1.1;
+    return easeInOut(clamp((t - 0.1) / 0.5, 0.0, 1.0)) * 1.1;
   }
 
   // Glowing start edge. d: signed arc distance (deg), positive inside the starting window
@@ -166,22 +168,35 @@ export const earthFragment = /* glsl */ `
     fajr = min(fajr, 180.0);
     isha = min(isha, 180.0);
 
+    // Displayed boundaries. The intro fan squeezes every boundary toward uGatherH with one factor,
+    // which keeps their order (bands never cross); uSpread = 1 gives the true positions.
+    float sp = clamp(uSpread, 0.0, 1.0);
+    float eF = uGatherH + (-fajr - uGatherH) * sp;       // Fajr starts
+    float eR = uGatherH + (-sunrise - uGatherH) * sp;    // sunrise
+    float eD = uGatherH + (0.0 - uGatherH) * sp;         // Dhuhr starts
+    float eA = uGatherH + (asr - uGatherH) * sp;         // Asr starts
+    float eS = uGatherH + (sunrise - uGatherH) * sp;     // sunset
+    float eM = uGatherH + (maghrib - uGatherH) * sp;     // Maghrib starts
+    float eI = uGatherH + (isha - uGatherH) * sp;        // Isha starts
+    float eNm = uGatherH + (-180.0 - uGatherH) * sp;     // Islamic midnight (west side)
+    float eNp = uGatherH + (180.0 - uGatherH) * sp;      // Islamic midnight (east side)
+
     int band = -1;          // 0..4 prayer index
     float progress = 0.0;   // 0 at start edge, 1 at end edge
     float late = 0.0;
 
-    if (H >= -fajr && H < -sunrise) {
-      band = 0; progress = (H + fajr) / max(fajr - sunrise, 0.001);
-    } else if (H >= 0.0 && H < asr) {
-      band = 1; progress = H / max(asr, 0.001);
-    } else if (H >= asr && H < sunrise) {
-      band = 2; progress = (H - asr) / max(sunrise - asr, 0.001);
-    } else if (H >= maghrib && H < isha) {
-      band = 3; progress = (H - maghrib) / max(isha - maghrib, 0.001);
-    } else if (H >= isha) {
-      band = 4; progress = (H - isha) / max(180.0 - isha, 0.001);
-    } else if (H < -fajr) {
-      band = 4; late = 1.0; progress = (H + 180.0) / max(180.0 - fajr, 0.001);
+    if (H >= eF && H < eR) {
+      band = 0; progress = (H - eF) / max(eR - eF, 0.001);
+    } else if (H >= eD && H < eA) {
+      band = 1; progress = (H - eD) / max(eA - eD, 0.001);
+    } else if (H >= eA && H < eS) {
+      band = 2; progress = (H - eA) / max(eS - eA, 0.001);
+    } else if (H >= eM && H < eI) {
+      band = 3; progress = (H - eM) / max(eI - eM, 0.001);
+    } else if (H >= eI && H < eNp) {
+      band = 4; progress = (H - eI) / max(eNp - eI, 0.001);
+    } else if (H >= eNm && H < eF) {
+      band = 4; late = 1.0; progress = (H - eNm) / max(eF - eNm, 0.001);
     }
 
     vec3 col = toSRGB(base); // uColors are sRGB
@@ -223,11 +238,11 @@ export const earthFragment = /* glsl */ `
       // start edges: crisp core of warm light, soft halo, slow shimmer flowing pole to pole
       float shimmer = 0.8 + 0.2 * sin(latTrue * 0.12 - uTime * 1.2);
       // signed arc distance from each start edge (positive = inside the new window)
-      float dF = wrap180(H + fajr) * k;
-      float dD = wrap180(H) * k;
-      float dA = wrap180(H - asr) * k;
-      float dM = wrap180(H - maghrib) * k;
-      float dI = wrap180(H - isha) * k;
+      float dF = wrap180(H - eF) * k;
+      float dD = wrap180(H - eD) * k;
+      float dA = wrap180(H - eA) * k;
+      float dM = wrap180(H - eM) * k;
+      float dI = wrap180(H - eI) * k;
       col = startEdge(col, dF, uColors[0], px, shimmer, revealAt(0.0, latTrue), tipGlow(0.0, latTrue));
       col = startEdge(col, dD, uColors[1], px, shimmer, revealAt(1.0, latTrue), tipGlow(1.0, latTrue));
       col = startEdge(col, dA, uColors[2], px, shimmer, revealAt(2.0, latTrue), tipGlow(2.0, latTrue));
@@ -236,9 +251,9 @@ export const earthFragment = /* glsl */ `
 
       // end-only edges (dashed white): sunrise, sunset, Islamic midnight
       float dash = step(0.45, fract(latTrue / 1.6));
-      float lR = line(abs(wrap180(H + sunrise)) * k, 1.4, px);
-      float lS = line(abs(wrap180(H - sunrise)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
-      float lN = line(abs(wrap180(H - 180.0)) * k, 1.4, px);
+      float lR = line(abs(wrap180(H - eR)) * k, 1.4, px);
+      float lS = line(abs(wrap180(H - eS)) * k, 1.4, px) * (abs(maghrib - sunrise) > 0.05 ? 1.0 : 0.0);
+      float lN = max(line(abs(wrap180(H - eNp)) * k, 1.4, px), line(abs(wrap180(H - eNm)) * k, 1.4, px));
       col = mix(col, vec3(1.0), clamp(lR + lS + lN, 0.0, 1.0) * dash * 0.6 * uBands * uEndLines);
     }
 

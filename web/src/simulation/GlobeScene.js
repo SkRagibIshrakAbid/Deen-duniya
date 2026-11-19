@@ -124,6 +124,8 @@ export class GlobeScene {
       uTime: { value: 0 },
       uIntro: { value: 99 }, // intro draw clock (s); large = fully drawn
       uEndLines: { value: 1 },
+      uSpread: { value: 1 }, // intro fan: 1 = true positions
+      uGatherH: { value: 0 },
       // sRGB components (the shader blends overlays in sRGB space)
       uColors: {
         value: Object.values(PRAYERS).map((p) => {
@@ -223,6 +225,14 @@ export class GlobeScene {
     const [x, y, z] = latLonToVector(declination, subsolarLon)
     this.earthUniforms.uSunDir.value.set(x, y, z)
     this.atmoUniforms.uSunDirW.value.set(x, y, z)
+    this.updateGather()
+  }
+
+  // Hour angle of the intro fan's gather meridian (follows the sun as time moves)
+  updateGather() {
+    if (this.gatherLon == null || !this.subsolar) return
+    const d = this.gatherLon - this.subsolar.lon
+    this.earthUniforms.uGatherH.value = ((d + 180) % 360 + 360) % 360 - 180
   }
 
   setParams(p) {
@@ -239,10 +249,18 @@ export class GlobeScene {
     if (clouds !== undefined) this.clouds.visible = clouds
   }
 
-  /** Intro animation state: draw = seconds into the band drawing, endLines = 0..1 */
-  setIntro({ draw, endLines }) {
+  /**
+   * Intro animation state: draw = seconds into the band drawing, endLines = 0..1,
+   * spread = 0..1 fan opening, gatherLon = longitude the fan opens from
+   */
+  setIntro({ draw, endLines, spread, gatherLon }) {
     if (draw !== undefined) this.earthUniforms.uIntro.value = draw
     if (endLines !== undefined) this.earthUniforms.uEndLines.value = endLines
+    if (spread !== undefined) this.earthUniforms.uSpread.value = spread
+    if (gatherLon !== undefined) {
+      this.gatherLon = gatherLon
+      this.updateGather()
+    }
   }
 
   setFollowSun(on) {

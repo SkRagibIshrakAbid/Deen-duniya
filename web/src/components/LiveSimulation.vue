@@ -468,16 +468,17 @@ const placeLabel = (el, lat, lon) => {
   el.style.opacity = p.visible ? '1' : '0'
 }
 
-// ---------- intro: bands are drawn, then time glides into live ----------
-//   0.0-2.2 s  camera flies in, no bands, clock 3 h in the past
-//   1.6-4.6 s  start lines drawn pole to pole (Fajr..Isha, 0.45 s apart), colour washes in behind
-//   4.6-7.6 s  clock glides from now-3h to now and settles; UI fades in
+// ---------- intro: bands are drawn as a closed fan at your meridian, then open to their live positions ----------
+//   0.0-2.2 s  camera flies in, no bands (clock is live throughout)
+//   1.6-3.2 s  a tight bundle of the five start lines is drawn pole to pole on the focus meridian
+//   3.0-6.8 s  the fan opens: every edge glides to its true position now; names ride their lines
+//   5.8-6.8 s  dashed end lines and the panels fade in
 const INTRO_DRAW_AT = 1.6
-const INTRO_SETTLE_AT = 4.6
-const INTRO_SETTLE_DUR = 3.0
-const INTRO_END = INTRO_SETTLE_AT + INTRO_SETTLE_DUR
-const INTRO_GLIDE_MS = 3 * 3600 * 1000
-const INTRO_FULL_DRAW = 6 // seconds of draw clock at which every band is complete
+const INTRO_FAN_AT = 3.0
+const INTRO_FAN_DUR = 3.8
+const INTRO_END = INTRO_FAN_AT + INTRO_FAN_DUR
+const INTRO_SPREAD_MIN = 0.03 // bundle width: 3% of the full spread
+const INTRO_FULL_DRAW = 3 // seconds of draw clock at which every line is complete
 const SKIP_MS = 400
 
 const intro = ref('pending') // 'pending' | 'running' | 'done'
@@ -485,11 +486,13 @@ const uiShown = ref(false)
 const livePulse = ref(false)
 const introLabelEls = ref([])
 let introT0 = 0
-let skip = null // { t0, draw, endLines, offset } while finishing early
-let introState = { draw: 0, endLines: 0, offset: INTRO_GLIDE_MS }
+let skip = null // { t0, draw, endLines, spread, labels } while finishing early
+let introState = { draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, labels: 0 }
 
 const easeInOutSine = (u) => -(Math.cos(Math.PI * u) - 1) / 2
+const easeInOutCubic = (u) => (u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2)
 const clamp01 = (x) => Math.min(1, Math.max(0, x))
+const wrap180 = (d) => ((d + 180) % 360 + 360) % 360 - 180
 
 const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 
@@ -502,28 +505,22 @@ const startIntro = () => {
   }
   intro.value = 'running'
   introT0 = performance.now()
-  introState = { draw: 0, endLines: 0, offset: INTRO_GLIDE_MS }
-  scene.setIntro({ draw: 0, endLines: 0 })
-  simMs = Date.now() - INTRO_GLIDE_MS
-  scene.setTime(new Date(simMs))
+  introState = { draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, labels: 0 }
+  scene.setIntro({ draw: 0, endLines: 0, spread: INTRO_SPREAD_MIN, gatherLon: focus.value.lon })
 }
+
+const resetIntroUniforms = () => scene?.setIntro({ draw: 99, endLines: 1, spread: 1 })
 
 /** Finish immediately (a user picked a time, or reduced motion) */
 const endIntroNow = () => {
-  const wasRunning = intro.value === 'running'
   intro.value = 'done'
   skip = null
   uiShown.value = true
-  scene?.setIntro({ draw: 99, endLines: 1 })
-  if (wasRunning) {
-    simMs = Date.now()
-    scene?.resetFollow()
-    scene?.setTime(new Date(simMs))
-  }
+  resetIntroUniforms()
   maybeAutoGuide()
 }
 
-/** Any interaction during the intro: glide to the final state over SKIP_MS */
+/** Any interaction during the intro: open the fan the rest of the way over SKIP_MS */
 const skipIntro = () => {
   if (intro.value !== 'running' || skip) return
   skip = { t0: performance.now(), ...introState }
@@ -531,10 +528,7 @@ const skipIntro = () => {
 }
 
 const finishIntro = () => {
-  scene.setIntro({ draw: 99, endLines: 1 })
-  simMs = Date.now()
-  scene.resetFollow()
-  scene.setTime(new Date(simMs))
+  resetIntroUniforms()
   intro.value = 'done'
   skip = null
   uiShown.value = true
@@ -543,41 +537,40 @@ const finishIntro = () => {
   maybeAutoGuide()
 }
 
-// Start-edge hour angles at the label latitude, for the five intro labels
+// Intro labels sit on their (spreading) start line, at the focus latitude clamped to ±40°
 const introLabelLat = () => Math.max(-40, Math.min(40, focus.value?.lat ?? 20))
 
-const placeIntroLabels = (draw, fadeAll) => {
+const placeIntroLabels = (spread, alpha) => {
   if (!scene?.subsolar) return
   const lat = introLabelLat()
   const e = eventAngles(lat, scene.subsolar.lat, params.value)
+  const h0 = wrap180(focus.value.lon - scene.subsolar.lon)
   const hs = [-e.fajr, 0, e.asr, e.maghrib, e.isha]
   hs.forEach((h, i) => {
     const el = introLabelEls.value[i]
     if (!el) return
-    const p = scene.project(lat, scene.subsolar.lon + h)
-    // appear as the pen passes the label, hold, then fade
-    const t = (draw - i * 0.45) / 1.2
-    const a = clamp01((t - 0.15) / 0.2) * (1 - clamp01((t - 1.6) / 0.6)) * fadeAll
+    const shown = h0 + (h - h0) * spread
+    const p = scene.project(lat, scene.subsolar.lon + shown)
     el.style.transform = `translate(${p.x}px, ${p.y}px)`
-    el.style.opacity = p.visible ? String(a) : '0'
+    el.style.opacity = p.visible ? String(alpha) : '0'
   })
 }
 
 const updateIntro = (now) => {
   const e = (now - introT0) / 1000
-  let { draw, endLines, offset } = {
-    draw: Math.max(0, e - INTRO_DRAW_AT),
-    endLines: clamp01((e - (INTRO_SETTLE_AT - 0.4)) / 1.0),
-    offset: INTRO_GLIDE_MS * (1 - easeInOutSine(clamp01((e - INTRO_SETTLE_AT) / INTRO_SETTLE_DUR)))
-  }
-  let fadeAll = 1
+  const fanU = clamp01((e - INTRO_FAN_AT) / INTRO_FAN_DUR)
+  let draw = Math.max(0, e - INTRO_DRAW_AT)
+  let endLines = clamp01((e - (INTRO_END - 1.0)) / 1.0)
+  let spread = INTRO_SPREAD_MIN + (1 - INTRO_SPREAD_MIN) * easeInOutCubic(fanU)
+  // names appear once the fan has opened a little (so they don't stack), fade before it settles
+  let labels = clamp01((fanU - 0.08) / 0.15) * (1 - clamp01((e - (INTRO_END - 0.8)) / 0.8))
   if (skip) {
     const k = clamp01((now - skip.t0) / SKIP_MS)
     const s = easeInOutSine(k)
-    draw = skip.draw + (INTRO_FULL_DRAW - skip.draw) * s
+    draw = skip.draw + Math.max(0, INTRO_FULL_DRAW - skip.draw) * s
     endLines = skip.endLines + (1 - skip.endLines) * s
-    offset = skip.offset * (1 - s)
-    fadeAll = 1 - k
+    spread = skip.spread + (1 - skip.spread) * s
+    labels = skip.labels * (1 - k)
     if (k >= 1) {
       finishIntro()
       return
@@ -586,12 +579,10 @@ const updateIntro = (now) => {
     finishIntro()
     return
   }
-  introState = { draw, endLines, offset }
-  if (e >= INTRO_SETTLE_AT) uiShown.value = true
-  scene.setIntro({ draw, endLines })
-  simMs = Date.now() - offset
-  scene.setTime(new Date(simMs))
-  placeIntroLabels(draw, fadeAll)
+  introState = { draw, endLines, spread, labels }
+  if (e >= INTRO_END - 1.0) uiShown.value = true
+  scene.setIntro({ draw, endLines, spread })
+  placeIntroLabels(spread, labels)
 }
 
 const onFrame = () => {
@@ -602,9 +593,8 @@ const onFrame = () => {
   // time-lapse caps the step so a stall doesn't jump hours
   const dt = speed.value === 1 ? elapsed : Math.min(0.25, elapsed)
 
-  if (intro.value === 'running') {
-    updateIntro(now)
-  } else if (playing.value) {
+  if (intro.value === 'running') updateIntro(now)
+  if (playing.value) {
     simMs += dt * 1000 * speed.value
     // real-time mode stays locked to the wall clock
     if (speed.value === 1 && Math.abs(simMs - Date.now()) < 5000) simMs = Date.now()
